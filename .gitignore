@@ -1,0 +1,77 @@
+# ── stray Windows reserved-name file (can't be git-indexed) ──
+nul
+**/nul
+
+# ── secrets ──
+.env
+.env.*
+*.env
+
+# ── dependencies ──
+node_modules/
+
+# ── machine / local agent state ──
+.claude/settings.local.json
+.claude/**/*.lock
+*session*.json
+
+# ── caches, browser profiles, scratch dirs ──
+.cache/
+**/.cache/
+.playwright-mcp/
+**/.playwright-mcp/
+**/user-data/
+temp/
+tmp/
+**/temp/
+**/tmp/
+reports/
+scheduled-runs/
+
+# ── binaries / rendered output ──
+*.png
+*.csv
+*.html
+
+# ── generated reports & run artifacts (may contain customer data) ──
+**/recommendations/
+**/payloads/
+**/backtest-results/
+**/cases/
+**/replay-cases/
+**/backtest-cases/
+
+# ── scratch dumps (A+/LCOS data, dot-prefixed) ──
+.tmp*
+
+# ── data / PII JSON & text (students, families, schedules, messages) ──
+# Code-config JSON is kept: package*.json, subject-map.json, non-tutors.json,
+# scheduling-pipeline-settings.json.
+lcos*.json
+aplus*.json
+messages*.json
+state*.json
+reconciliation*.json
+pipeline-state.json
+last-run.json
+output-rows.json
+_full.json
+_lastpending.txt
+backtest-corpus*.json
+backtest-report.json
+replay-report.json
+*.rec.json
+*.recommendation.json
+*.payload.json
+*.backtest.json
+demo-*.json
+req-*.json
+out_*
+payload*.json
+*_output.json
+*_parsed*.json
+*_raw*.json
+*_batch*.json
+*_blocks*.json
+*_part*.json
+test_*.json

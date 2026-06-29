@@ -1,0 +1,1 @@
+Run the schedule-reconcile skill for the upcoming week and send the email report to staff@huntingtonissaquah.com and riddickb@hlcmail.com

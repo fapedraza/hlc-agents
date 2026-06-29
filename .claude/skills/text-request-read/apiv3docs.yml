@@ -1,0 +1,4544 @@
+openapi: 3.0.0
+info:
+  version: '3.0.0'
+  title: 'Text Request API v3'
+  description: |
+    This page contains documentation for Text Request's v3 API. [Click here](https://www.textrequest.com/api/v2) for v2 documentation.
+
+    The Text Request API makes it easy to programmatically interact with your Text Request account. It provides the ability to **send messages**, **retrieve conversations**, **send payment requests**, **manage contacts, groups, dashboards, and users**, and **create and delete web hooks**. 
+    
+    Web hooks allow you to get notifications when **messages are sent**, **new messages are received**, **contacts are created**, **contacts are updated**, **payment requests are updated**, and when **location requests are received**.
+    
+    # Security
+    
+    All calls to the Text Request API will be authenticated with an API key. All API keys will be transmitted in the request **x-api-key** header. 
+      
+    ```
+    x-api-key: 095E5113DE4142C28FB7815CC10BEB56
+    ```
+      
+    Failure to specify an authorization header for any request will result in a HTTP `400 (Bad Request)` response.
+      
+    You can find your account's API key on your Text Request account:
+    * Log into Text Request as an administrator
+    * Click on the Integrations sidebar menu item
+    * Choose the API tile near the top of the screen. If your account does not have api access, you can upgrade your account by clicking the "Buy Now" option on the API tile.
+    * Copy your API Key from the box on-screen
+      
+    # Error Handling
+      
+      In the event of a failed request, the API will return an appropriate HTTP response code. If the error is due to an invalid request, a human readable error will also be returned is the response's *message* property. For blatantly obvious errors (`404 (Not Found)` responses, for example), this may be left blank. 
+      
+      Here's an example of an error response for an omitted field.
+      
+      ```
+      HTTP 400
+      
+      Response Body
+      
+      {
+        "status": 400,
+        "errorCode": null,
+        "message": "A first name must be specified."
+      } 
+      ```
+      
+      # Pagination for Returned Collections
+      
+      When querying a collection such as users or conversations, there may be thousands of results. To prevent responses from getting massively large, these collections are paginated. For any request to a resource that returns a collection, `page` and `page_size` querystring parameters may be specified to return a subset of entities.
+      
+      API endpoints that return a collection also include `meta` properties in the response, specifying **the returned page**, **the returned page size**, and **the total number of items in the collection**.
+      
+      Here's an example collection return, with the items represented by the ellipses (...):
+      
+      ```
+      HTTP 200
+      
+      Response Body
+      
+      {
+        "items": [
+          ...
+        ],
+        "meta": {
+            "page": 0,
+            "page_size": 100,
+            "total_items": 276
+        }
+      } 
+      ```
+      
+      Here are the rules for how page, page_size, and link headers work:
+      
+      * If omitted, page = 0 and page_size = 100 is implied.
+      * If page or page_size is invalid (negative number or non-numeric), a HTTP `400 (Bad Request)` response is returned.
+      * If page * page_size is greater than the number of entities in the collection, the `items` array will be empty.
+      * Collection `GET` requests will always return the `page`, `page_size`, and `total_items` properties.
+      
+      # Web hook Payloads
+
+      Text Request has a variety of web hooks for hitting URLs you own if you want extra functionality in your own apps. Each webhook has a unique data payload that is sent whenever the trigger is set off. To see the payloads:
+      * Scroll down to the `POST /dashboards/{dashboard_id}/hooks` API call on this page
+      * Between the **Parameters** tab and the **Try it out** button, click the "Callbacks" tab
+      * Click to view the payload sent in any of these web hooks. The payload will be the same regardless of whether it's a `POST`, `PUT`, or `DELETE` request.
+
+      Web hooks can be created in the [web app](https://app.textrequest.com), or through the `POST` endpoint.
+
+      ## Web hook Disconnecting
+
+      If a web hook **times out** (marked as 501) or receives a **4XX** or **5XX** http code, the web hook will fail. If the web hook fails 10 times in a row, the web hook will be automatically disconnected. To reconnect you can either:
+      * Call the `PUT /dashboards/{dashboard_id}/hooks/{hook_id}` API request below
+      * Visit the [web app](https://app.textrequest.com/app/integrations/api) and manually reconnect the webhook
+
+      You can check whether a webhook is disconnected by looking at the is_connected value returned from `GET /dashboards/{dashboard_id}/hooks`
+
+      # Delivery Error Codes
+
+      Messages returned from conversation-based endpoints will have a *delivery_error* property with a number code. These can be:
+
+      | Delivery Error | Description |
+      |------------|-------------|
+      | ***null***       | Message sent successfully, or is still being sent. See *delivery_status* property |
+      | **44XX**       | Bandwidth Error. See [Bandwidth's documentation](https://dev.bandwidth.com/docs/messaging/errors/) |
+      | **47XX**       | Bandwidth Error. See [Bandwidth's documentation](https://dev.bandwidth.com/docs/messaging/errors/) |
+      | **9XXX**       | Bandwidth Error. See [Bandwidth's documentation](https://dev.bandwidth.com/docs/messaging/errors/) |
+      | **30003**      | Unreachable destination handset |
+      | **30004**      | Message blocked |
+      | **30005**      | Unknown Phone |
+      | **30006**      | Landline or unreachable carrier |
+      | **30007**      | The destination is a landline phone, or the destination carrier can't be reached. |
+      | **30050**      | Contact has previously opted out |
+
+      For more information on any of these, or other Error Codes, contact API Support: [apisupport@textrequest.com](mailto:apisupport@textrequest.com)
+
+      # Delivery Status Webhook Error Codes
+
+      If a message errors and you are using the Message Status Updated webhook, we give a simplified error code set. See `POST /dashboards/{dashboard_id}/hooks` then check the **Callbacks** tab.
+
+      | Delivery Error | Description |
+      |------------|-------------|
+      | ***null***     | Message sent successfully, or is still being sent. See *delivery_status* property |
+      | **1000**       | A temporary service error. It's acceptable to try another message with the same recipient and message body.
+      | **1001**       | A potentially serious service error. You may try one more message, but otherwise Text Request contact support at [apisupport@textrequest.com](mailto:apisupport@textrequest.com). |
+      | **1002**       | Unreachable destination handset |
+      | **2000**       | An error occured on the client-side, potentially with the customer's carrier |
+      | **2001**       | Recipient is unreachable. You may be blocked, the customer handset is turned off, or the number is no longer in service. |
+      | **2002**       | Filtered. You're being filtered by the carrier or flagged as spam. |
+      | **2003**       | The destination is a landline phone, or the destination carrier can't be reached. |
+      | **2100**       | Contact has previously opted out |
+      | **3000**       | Unknown Error |
+
+      Now that security and pagination are out of the way, lets take a look at the endpoints. You can try out each endpoint from directly within your browser by clicking the Authorize button below and entering your Text Request API key.
+
+servers:
+  - url: 'https://api.textrequest.com/api/v3/'
+
+tags:
+  - name: Contacts
+    description: Managing contacts
+  - name: Custom Fields
+    description: Managing custom fields
+  - name: Tags
+    description: Managing contact tags
+  - name: Messages
+    description: Sending and receiving messages
+  - name: Groups
+    description: Managing groups
+  - name: Dashboard
+    description: Get information on dashboards
+
+paths:
+  ############################
+  # Basic message send
+
+  /mms:
+    post:
+      tags:
+      - Messages
+      summary: Post an MMS attachment to Text Request.
+      description: |
+        Use this endpoint to post an MMS attachment to Text Request. If successful, mms details including a mms_id unique identifier will be returned. You can use this mms_id when sending MMS messages through the API. Valid file types are csv, jpeg, png, pdf, gif, txt, xlsx, mp4, vcard, vcf. The reason for first uploading an MMS attachment is for speed during reuse. If you are sending multiple messages, you can reuse a single uploaded MMS instead of re-uploading the same attachment multiple times. 
+
+        The max size for attachments is 1MB for PDFs, and 5MB for everything else, but we recommend all files stay below 1MB. Most carriers support individual files that are under 1MB. Anything larger can be sent but will be compressed in a way that affects the quality. A single message can have up to 3 attachments of any size, but the images will be downsized until the total size is no more than 2MB. PDFs can't be compressed like other images and have a max file size of 1MB.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/mms_media_upload'
+      responses:
+        200:
+          description: The specified file was successfully uploaded to the dashboard. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/mms_media'
+        400:
+          description: Bad Request. Request parameters were either invalid or omitted. See the message for more details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: Files with extension 'HEIC' not supported
+        401: 
+          description: Unauthorized. Either the Authorization request header was missing, in an invalid format, or the API key provided was invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: The Authorization request header is missing.
+  /messages:
+    post:
+      tags:
+      - Messages
+      summary: Sends a message
+      description: |
+        Sends a message through a dashboard in your Text Request account. You can optionally specify a delivery status callback URL to track the status of the message on a third-party site. If a delivery callback URL is specified, you will receive either a delivered callback, or an error callback with a status code explaining the issue. Messages are sent at the throttle rate on your dashboard. The throttle rate is defined as your 10DLC message rate, or at one message per second for non-10dlc registered dashboards.
+
+        Sent messages can also include Location requests. Location requests are urls sent in texts that contacts can access to send their location to Text Request. This info will be shown in their queue, but can also be sent via a callback to some third-party url.
+        
+        Location requests can be done in one of two ways:
+        * Set geolocation_requested to true in the request body. This will add the phrase "Go to *\<text request url\>* to share your location"
+        * Add the tag **[LocationRequest]** to your message body. This tag will be replaced by the text request url.
+
+        Location requests can also have a callback that is returned when the location request is completed by the contact. This information will be sent as a POST request to the **location_callback** property. See the callbacks tab below for the schema of the callback.
+
+        **WARNING:** The location_callback property only works with the **[LocationRequest]** tag. If no tag exsits, even if geolocation_requested is true, the callback will not work and the send-message request will return a `400 (Bad Request)` exception.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_message_request'
+      callbacks:
+        messageStatus:
+          'status_callback':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_message_status'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+        locationRequest:
+          'location_callback':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_location_callback'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+      responses:
+        200:
+          description: The message was received by Text Request, request fields were validated, and it is being sent. This does not mean that the message was successfully delivered - it is possible for a valid message to be rejected and not delivered due to a number of factors such as an invalid recipient, the destination handset being switched off, or if the message is filtered as spam by the receiving carrier. For delivery confirmation, please add a valid webhook URL for the status_callback parameter. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/post_message_response'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid. Check the return value to determine the reason that the message was rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Dashboards
+
+  /dashboards:
+    get:
+      parameters:
+        - 
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Dashboard
+      summary: Get all dashboards in an account.
+      description: Returns all dashboards in an account. 
+      responses:
+        200:
+          description: All dashboards will be returned by this call. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dashboard_response_container'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      tags:
+      - Dashboard
+      summary: Create a new dashboard with the given name and phone number
+      description: Creates a new dashboard in the account. Once the dashboard is created, admins will be emailed about the changed, and can begin assigning users. This endpoint can make a dashboard for any provisioned numbers. You can search for provisioned numbers in a specific area code using GET /dashboards/provisioning. If the phone number is already in use, a Bad Request exception will be thrown.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_dashboard_request'
+      responses:
+        200:
+          description: The new dashboard. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dashboard'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Dashboard
+      summary: Get info on this specific dashboard
+      description: Returns the name and phone of the dashboard. 
+      responses:
+        200:
+          description: Info on the specified dashboard. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dashboard'
+        400:
+          description: Thrown if the dashboard id is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Dashboard
+      summary: Update a specific dashboard's name
+      description: Updates a dashboard. This does not change a dashboard's phone number. If you want a new number with another dashboard's contacts, you will have to create a new dashboard with a POST and add the contacts with a bulk export/import.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/put_dashboard_request'
+      responses:
+        200:
+          description: Info on the specified dashboard. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dashboard'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Dashboard
+      summary: Deletes the specified dashboard.
+      responses:
+        204:
+          description: The dashboard was deleted.
+        400:
+          description: Thrown if the dashboard id or phone number is invalid.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: Thrown if no dashboard with that id exists in the account.
+
+  '/dashboards/provisioning':
+    get:
+      parameters:
+        -
+            name: area_code
+            in: query
+            description: 'Area code to search for provisioned numbers of'
+            required: true
+            schema:
+                type: integer
+                example: 423
+      tags:
+      - Dashboard
+      summary: Get available provisioned numbers for hosting with a dashboard
+      description: Returns a list of 30 provisioning numbers. These numbers can be used for creating a dashboard with POST /dashboards. All numbers and area codes must be in the United States. Text Request only hosts numbers with the +1 country code.
+      responses:
+        200:
+          description: Array of provisioned phone numbers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["14235839662","14235613296","14235563620","14235619443","14235374835","14233584053","14235374365","14235567207","14234608463","14234718646","14239199065","14232957341","14237993079","14232142518","14235619508","14234819030","14237992520","14235613522","14232204519","14235645572","14237993577","14235563222","14235568414","14234559433","14232957435","14235606264","14235567539","14234368551","14237992489","14237993773"]
+        400:
+          description: Thrown if the provided area code is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example:
+                message: A three digit area code must be supplied.
+                errorCode: parameterInvalid
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Conversations
+
+  '/dashboards/{dashboard_id}/conversations':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: tags
+            in: query
+            description: 'List or singular guid referencing the contact tags you want to filter by'
+            required: false
+            schema:
+              type: string
+            examples:
+              empty:
+                value: ''
+                summary: Do Not Filter By Tags
+              single:
+                value: '00000000-0000-0000-0000-000000000000'
+                summary: Singular tag
+              multiple:
+                value: '00000000-0000-0000-0000-000000000000,11111111-1111-1111-1111-111111111111'
+                summary: Comma-separated list of tags
+        -
+            name: show_unresolved_only
+            in: query
+            required: false
+            schema:
+              type: boolean
+        -
+            name: include_archived
+            in: query
+            required: false
+            schema:
+              type: boolean
+        -
+            name: search
+            in: query
+            description: 'Search term for filtering conversations by phone number or display name. If the search term is less than a full name or phone number, the search will return all conversations that partially match it.'
+            required: false
+            schema:
+              type: string
+            examples:
+              empty:
+                value: ''
+                summary: Do Not Search By Phone
+              phone:
+                value: '321-654-7890'
+                summary: Full phone number
+              partialphone:
+                value: '654-3210'
+                summary: Partial phone number
+              name:
+                value: 'Joe'
+                summary: Partial Display Name
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Conversations
+      summary: Retrieves all conversations for this dashboard.
+      description: Retrieves the last message across all conversations in this dashboard.
+      responses:
+        200:
+          description: Conversations. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/conversation_response_container'
+        204:
+          description: No conversations exist in the provided dashboard.'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/contacts/{phone_number}/messages':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Conversations
+      - Messages
+      summary: Get a conversation's messages by contact phone.
+      description: Retrieves the conversation between the specified dashboard and phone number.
+      responses:
+        200:
+          description: Messages in the conversation. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/message_response_container'
+        204:
+          description: No contact in the dashboard matches the provided number.'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Conversations
+      - Messages
+      summary: Send a message to the contact with the given phone number
+      description: |
+        Sends a message (starting a new conversation if the given phone number has no message history). You can optionally specify a delivery status callback URL to track the status of the message on a third-party site. Upon successful execution, a message will be in a 'sent' status. If a delivery callback URL is specified, you will receive either a delivered callback, or an error callback with a status code explaining the issue. Messages are sent at the throttle rate on your dashboard. The throttle rate is defined as your 10DLC message rate, or at one message per second for non-10dlc registered dashboards.
+
+        Sent messages can also include Location requests. Location requests are urls sent in texts that contacts can access to send their location to Text Request. This info will be shown in their queue, but can also be sent via a callback to some third-party url.
+        
+        Location requests can be done in one of two ways:
+        * Set geolocation_requested to true in the request body. This will add the phrase "Go to *<text request url>* to share your location"
+        * Add the tag **[LocationRequest]** to your message body. This tag will be replaced by the text request url.
+
+        Location requests can also have a callback that is returned when the location request is completed by the contact. This information will be sent as a POST request to the **location_callback** property. See the callbacks tab below for the schema of the callback.
+
+        **WARNING:** The location_callback property only works with the **[LocationRequest]** tag. If no tag exsits, even if geolocation_requested is true, the callback will not work and the send-message request will return a `400 (Bad Request)` exception.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/contact_message_request'
+      callbacks:
+        messageStatus:
+          'status_callback':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_message_status'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+        locationRequest:
+          'location_callback':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_location_callback'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+      responses:
+        200:
+          description: The new message. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/message'
+        400:
+          description: Bad request. Some required parameters were missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+                
+  '/dashboards/{dashboard_id}/messages':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: start_date
+            in: query
+            description: 'Start date to filter messages in this dashboard by'
+            schema:
+                type: string
+                format: date-time
+        -
+            name: end_date
+            in: query
+            description: 'End date to filter messages in this dashboard by'
+            schema:
+                type: string
+                format: date-time
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Conversations
+      - Messages
+      summary: Get all messages for a dashboard.
+      description: Retrieves the text messages sent and received in the specified dashboard. Optionally, can provide a start and end date to filter the message history by. Messages will always be sorted from oldest to newest
+      responses:
+        200:
+          description: Messages in the conversation. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dashboard_message_response_container'
+        204:
+          description: No contact in the dashboard matches the provided number.'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+  
+  '/dashboards/{dashboard_id}/contacts/{phone_number}/conversations/archive':
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Conversations
+      summary: Archive a Conversation
+      description: Archiving a conversation removes it from the results of all conversation retrieval endpoints. A conversation will be automatically unarchived if the customer sends a text to your Text Request number, or if you send the customer a text from your Text Request number. Archiving conversations is a good way to remove clutter from customers that you don’t plan on talking to in the future. Note that if a customer texts in "STOP"” to prevent you from sending them any further SMS messages, the conversation is automatically archived.
+      responses:
+        200:
+          description: Success. No content is returned.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+  
+  '/dashboards/{dashboard_id}/contacts/{phone_number}/conversations/unarchive':
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Conversations
+      summary: Unarchive a Conversation
+      description: Unarchive a conversation. Once a conversation is unarchived, it will once again appear in the queue. it will also appear in conversations returned by the /conversations endpoint. If a conversation is already unarchived, this method has no effect.
+      responses:
+        200:
+          description: Success. No content is returned.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/messages/{message_id}/redact':
+    put:
+      parameters:
+        -
+            name: message_id
+            in: path
+            description: 'Id of message to redact'
+            required: true
+            schema:
+                type: string
+                example: '00000000-0000-0000-0000-000000000000'
+      tags:
+      - Messages
+      summary: Redact a message
+      description: Redacts a previously sent message in the Text Request queue. This does not undo sending the message, but hides the message body on Text Request's side in case the message body contains sensitive information. This operation can be undone with the /messages/{message_id}/unredact endpoint.
+      responses:
+        200:
+          description: Success. No content is returned.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/messages/{message_id}/unredact':
+    put:
+      parameters:
+        -
+            name: message_id
+            in: path
+            description: 'Id of message to unredact'
+            required: true
+            schema:
+                type: string
+                example: '00000000-0000-0000-0000-000000000000'
+      tags:
+      - Messages
+      summary: Unredact a message
+      description: Removes the redaction on a previously redacted message in the Text Request queue. See the /messages/{message_id}/redact endpoint.
+      responses:
+        200:
+          description: Success. No content is returned.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Contacts
+
+  '/dashboards/{dashboard_id}/contacts':
+    summary: Contacts at the dashboard level.
+    description: Contact management for all contacts in a given dashboard.
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: Id of dashboard
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: contact_phone_number
+            in: query
+            required: false
+            description: The phone number that you're searching for. This uses "starts with" searching.
+            schema:
+                type: string
+        -
+            name: display_name
+            in: query
+            required: false
+            description: The display name that you're searching for. This uses "contains substring" searching.
+            schema:
+                type: string
+        -
+            name: last_message_timestamp_before_utc
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: last_message_timestamp_after_utc
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: contact_created_before
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: contact_created_after
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: is_resolved
+            in: query
+            required: false
+            schema:
+                type: boolean
+        -
+            name: has_message_history
+            in: query
+            required: false
+            schema:
+                type: boolean
+        -
+            name: is_blocked
+            in: query
+            required: false
+            schema:
+                type: boolean
+        -
+            name: is_archived
+            in: query
+            required: false
+            schema:
+                type: boolean
+        -
+            name: is_suppressed
+            in: query
+            required: false
+            schema:
+                type: boolean
+        -
+            name: has_opted_out
+            in: query
+            required: false
+            schema:
+                type: boolean
+        -
+            name: last_message_sent_before
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: last_message_sent_after
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: last_message_received_before
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: last_message_received_after
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: tags
+            in: query
+            description: 'List or singular guid referencing the contact tags you want to filter by'
+            required: false
+            schema:
+              type: string
+            examples:
+              empty:
+                value: ''
+                summary: Do Not Filter By Tags
+              single:
+                value: '00000000-0000-0000-0000-000000000000'
+                summary: Singular tag
+              multiple:
+                value: '00000000-0000-0000-0000-000000000000,11111111-1111-1111-1111-111111111111'
+                summary: Comma-separated list of tags
+        -
+            name: groups
+            in: query
+            description: 'List or singular ids referencing the groups you want to filter by'
+            required: false
+            schema:
+              type: string
+            examples:
+              empty:
+                value: ''
+                summary: Do Not Filter By Groups
+              single:
+                value: '17'
+                summary: Singular group
+              multiple:
+                value: '17,18,21'
+                summary: Comma-separated list of groups
+        -
+            name: custom_field_id_1
+            in: query
+            required: false
+            description: Id of custom field to filter by. Requires value for custom_field_value_1 to specify the desired custom field value
+            schema:
+                type: string
+        -
+            name: custom_field_value_1
+            in: query
+            required: false
+            description: Filter value of the custom field specied in custom_field_id_1. Requires value for custom_field_id_1 to specify which custom field to filter by
+            schema:
+                type: string
+        -
+            name: custom_field_id_2
+            in: query
+            required: false
+            description: Id of custom field to filter by. Requires value for custom_field_value_2 to specify the desired custom field value
+            schema:
+                type: string
+        -
+            name: custom_field_value_2
+            in: query
+            required: false
+            description: Filter value of the custom field specied in custom_field_id_2. Requires value for custom_field_id_2 to specify which custom field to filter by
+            schema:
+                type: string
+        -
+            name: custom_field_id_3
+            in: query
+            required: false
+            description: Id of custom field to filter by. Requires value for custom_field_value_3 to specify the desired custom field value
+            schema:
+                type: string
+        -
+            name: custom_field_value_3
+            in: query
+            required: false
+            description: Filter value of the custom field specied in custom_field_id_3. Requires value for custom_field_id_3 to specify which custom field to filter by
+            schema:
+                type: string
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Contacts
+      summary: Retrieves all contacts that match the specified filtering criterion.
+      description: As many as all filter parameters and as few as none may be set. Only the dashboard specified will be searched; contacts are organized by dashboard, and there is no account level search for a number available.
+      responses:
+        200:
+          description: A list of contacts. 
+          content:
+            application/json:
+                schema:
+                  $ref: '#/components/schemas/contact_response_container'
+        400:
+          description: Bad request. Sent if a query is invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: Id of dashboard
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Contacts
+      summary: Bulk update contacts, updating contacts with matching phone numbers or creating new contacts for new phone numbers.
+      description: Only the dashboard specified will have contacts added; contacts are organized by dashboard, and there is no account level search for a number available.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/update_contact_request'
+      responses:
+        200:
+          description: A list of contacts. 
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/contact'
+        400:
+          description: Bad request. Sent if a query is invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/contacts/{phone_number}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Contacts
+      summary: Retrieves the contact with the specified phone number.
+      description: If a contact does not yet exist with this phone number in this dashboard, no content will be returned, and no error will be thrown. Only the dashboard specified will be searched; contacts are organized by dashboard, and there is no account level search for a number available.
+      responses:
+        200:
+          description: Contact with this number will be returned. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/contact'
+        204:
+          description: No contact in the dashboard matches the provided number.'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Contacts
+      summary: Deletes the contact with the specified phone number.
+      description: If a contact does not exist with this phone number in this dashboard, no content will be returned. If a contact does exist, but has no message history, no content will be returned, and a successful status code will indicate it was deleted. If a contact has any message history, it cannot be deleted, then a Bad Request error will be returned. 
+      responses:
+        200:
+          description: The contact was deleted.
+        400:
+          description: Thrown if the dashboard id or phone number is invalid, or if the contact exists, but has a message history.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: Thrown if no contact with the specified phone number exists in the dashboard.
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Contacts
+      summary: Create or update a contact with the given phone number
+      description: Creates or updates a contact (depending on whether one already exists with the given phone number).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_contact_request'
+      responses:
+        200:
+          description: The new/updated contact. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/contact'
+        400:
+          description: Bad request. There are no required parameters. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    patch:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: phone_number
+            in: path
+            description: 'Phone number'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Contacts
+      summary: Add or remove a group, contact tag, or custom field to a contact with the given phone number
+      description: Adds or removes a group, contact tag, or custom field to a contact (depending on the secondary boolean value in the request body).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/patch_contact_request'
+      responses:
+        200:
+          description: The new/updated contact. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/contact'
+        400:
+          description: Bad request. There are no required parameters. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Groups
+
+  '/dashboards/{dashboard_id}/groups':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Groups
+      summary: Retrieves all groups.
+      responses:
+        200:
+          description: All groups in a list. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/group_response_container'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Groups
+      summary: Creates a new group
+      description: Creates a new group with the provided name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_group_request'
+      responses:
+        200:
+          description: The new group. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/group'
+        400:
+          description: Bad request - no name was specified. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/groups/{group_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: group_id
+            in: path
+            description: 'Id of group'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Groups
+      summary: Retrieves the group with the specified id.
+      description: Retrieves the group with the specified id.
+      responses:
+        200:
+          description: The group's details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/group'
+        204:
+          description: No group in the dashboard matches the provided id.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: group_id
+            in: path
+            description: 'Id of group'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Groups
+      summary: Deletes the group with the specified id.
+      description: This will succeed even if there are contacts that are members of the group (the contacts will not be deleted). 
+      responses:
+        204:
+          description: The group was deleted.
+        400:
+          description: Thrown if the dashboard id or group id is invalid.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: Thrown if no group with that id exists in the dashboard.
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: group_id
+            in: path
+            description: 'Id of group'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Groups
+      summary: Update a group with the given id
+      description: Updates a group's name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_group_request'
+      responses:
+        200:
+          description: The group was updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/group'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Users
+
+  '/users':
+    get:
+      parameters:
+        -
+            name: external_user_id
+            in: query
+            required: false
+            description: External User Id to filter the results by. The External User Id is a custom value that can only be set from within the API. Multiple users can have the same external user id.
+            schema:
+                type: string
+        -
+            name: email
+            in: query
+            required: false
+            description: User's email address to filter the results by. A user's email address cannot be changed. Only one user can exist in an account for an email address.
+            schema:
+                type: string
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Users
+      summary: Retrieves all users.
+      responses:
+        200:
+          description: All users for this account in a list. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/user_response_container'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      tags:
+      - Users
+      summary: Creates a new user
+      description: Creates a new user with the provided email address and password. This endpoint does not generate an email to send to the user. Users created through the web app get an auto-generated password emailed to them. Due to the password being a part of this endpoint's request body, this email is not necessary.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_user_request'
+      responses:
+        200:
+          description: The new user. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/user'
+        400:
+          description: Bad request - no name, email, or password was specified. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/users/{user_id}':
+    get:
+      parameters:
+        -
+            name: user_id
+            in: path
+            description: 'Id of user'
+            required: true
+            schema:
+                type: integer
+                example: 508
+      tags:
+      - Users
+      summary: Retrieves the user with the specified id.
+      description: Retrieves the user with the specified id.
+      responses:
+        200:
+          description: The user's details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/user'
+        204:
+          description: No user in the account matches the provided id.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: user_id
+            in: path
+            description: 'Id of user'
+            required: true
+            schema:
+                type: integer
+                example: 508
+      tags:
+      - Users
+      summary: Deletes the user with the specified id
+      description: Deletes the user with the specified id and removes permissions from all dashboards. 
+      responses:
+        204:
+          description: The user was deleted.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: No user in the account matches the provided id.
+    put:
+      parameters:
+        -
+            name: user_id
+            in: path
+            description: 'Id of user'
+            required: true
+            schema:
+                type: integer
+                example: 508
+      tags:
+      - Users
+      summary: Update a user with the given id
+      description: Updates a user's name and permissions.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/update_user_request'
+      responses:
+        200:
+          description: The user was updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/user'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Keywords
+
+  '/dashboards/{dashboard_id}/keywords':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Keywords
+      summary: Retrieves all keywords.
+      responses:
+        200:
+          description: All keywords. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/keyword_response_container'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Keywords
+      summary: Creates a new keyword
+      description: Creates a new keyword with the provided name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_keyword_request'
+      responses:
+        200:
+          description: The new group. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/keyword'
+        400:
+          description: Bad request - no name was specified. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/keywords/{keyword_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: keyword_id
+            in: path
+            description: 'Id of keyword'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Keywords
+      summary: Retrieves the keyword with the specified id.
+      description: Retrieves the keyword with the specified id.
+      responses:
+        200:
+          description: The keyword's details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/keyword'
+        204:
+          description: No keyword in the dashboard matches the provided id.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: keyword_id
+            in: path
+            description: 'Id of keyword'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Keywords
+      summary: Deletes the keyword with the specified id.
+      description: This will succeed even if there are contacts that are members of the keyword (the contacts will not be deleted). 
+      responses:
+        204:
+          description: The keyword was deleted.
+        400:
+          description: Thrown if the dashboard id or keyword id is invalid.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: Thrown if no keyword with that id exists in the dashboard.
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: keyword_id
+            in: path
+            description: 'Id of keyword'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Keywords
+      summary: Update the keyword with the given id
+      description: Updates a keyword's name or description.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_keyword_request'
+      responses:
+        200:
+          description: The keyword was updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/keyword'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Tags
+
+  '/dashboards/{dashboard_id}/tags':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Tags
+      summary: Retrieves all the tags for this dashboard.
+      description: Retrieves all tags.
+      responses:
+        200:
+          description: The tags and their details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tag_response_container'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Tags
+      summary: Creates a new tag
+      description: Creates a new tag with the provided name and color.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_tag_request'
+      responses:
+        200:
+          description: The new tag. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tag'
+        400:
+          description: Bad request. No name was specified, or tag with that name already exists. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/tags/{tag_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: tag_id
+            in: path
+            description: 'Id of tag'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Tags
+      summary: Retrieves the tag with the specified id.
+      description: Retrieves the tag with the specified id, including its name and color.
+      responses:
+        200:
+          description: The tag's details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tag'
+        204:
+          description: No tag in the dashboard matches the provided id.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: tag_id
+            in: path
+            description: 'Id of tag'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Tags
+      summary: Deletes the tag with the specified id.
+      description: This will succeed even if there are contacts that are tagged (the contacts will not be deleted). 
+      responses:
+        204:
+          description: The tag was deleted.
+        400:
+          description: Thrown if the dashboard id or tag id is invalid.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: Thrown if no tag with that id exists in the dashboard.
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: tag_id
+            in: path
+            description: 'Id of tag'
+            required: true
+            schema:
+                type: string
+      tags:
+      - Tags
+      summary: Update a tag with the given id
+      description: Updates a tag's name or color.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_tag_request'
+      responses:
+        200:
+          description: The updated tag. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tag'
+        400:
+          description: Bad request. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Fields
+
+  '/dashboards/{dashboard_id}/fields/{field_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: field_id
+            in: path
+            description: 'Id of field'
+            required: true
+            schema:
+                type: string
+                example: 'f0d364d4-52e7-44a7-a1bb-b7ce0ccb5ead'
+      tags:
+      - Custom Fields
+      summary: Retrieves the custom field with the specified id.
+      description: Pagination information will be in the header.
+      responses:
+        200:
+          description: The custom field name. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/custom_field'
+        204:
+          description: No custom field in the dashboard matches the provided Guid.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: field_id
+            in: path
+            description: 'Id of field'
+            required: true
+            schema:
+                type: string
+                example: 'f0d364d4-52e7-44a7-a1bb-b7ce0ccb5ead'
+      tags:
+      - Custom Fields
+      summary: Deletes the field with the specified id.
+      description: If at least one contact has a value for this field specified, deletion will fail. 
+      responses:
+        204:
+          description: Either the field was deleted, or no field with that guid existed in the dashboard.
+        400:
+          description: Thrown if the dashboard id or field id is invalid, or if the field exists, but some contacts have a value for that field.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        404:
+          description: Thrown if no field with that id exists in the dashboard.
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: field_id
+            in: path
+            description: 'Id of field'
+            required: true
+            schema:
+                type: string
+                example: 'f0d364d4-52e7-44a7-a1bb-b7ce0ccb5ead'
+      tags:
+      - Custom Fields
+      summary: Update a custom field's name
+      description: Updates a custom field's name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_custom_field'
+      responses:
+        200:
+          description: The updated custom field object. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/custom_field'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/fields':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Custom Fields
+      summary: Retrieves all custom fields.
+      description: All custom fields will be returned.
+      responses:
+        200:
+          description: The custom fields. There is no pagination; all fields will be returned at once.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                    $ref: '#/components/schemas/custom_field'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Custom Fields
+      summary: Create a new custom field.
+      description: Create a custom field with the provided name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_custom_field'
+      responses:
+        200:
+          description: The new custom field object. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/custom_field'
+        400:
+          description: Bad request. Sent if too many custom fields alreay exist for this dashboard, or invalid parameters were passed. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  ############################
+  # Payments
+
+  '/dashboards/{dashboard_id}/payments':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: reference_number
+            in: query
+            description: 'User-defined id defined when payments are created that can be used to quickly find payments. Reference numbers are not unique; many payments can have the same reference.'
+            required: false
+            schema:
+                type: string
+        -
+            name: phone_number
+            in: query
+            description: 'Phone number'
+            required: false
+            schema:
+                type: string
+        -
+            name: sort_type
+            in: query
+            description: 'Property to sort payments by.'
+            required: false
+            schema:
+                type: string
+                enum: ["amount", "contact", "date", "status"]
+                default: date
+        -
+            name: sort_direction
+            in: query
+            description: 'Direction to sort payments in. Either greatest to smallest, or smallest to greatest.'
+            required: false
+            schema:
+                type: string
+                enum: ["desc", "asc"]
+                default: desc
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Payments
+      summary: Retrieves all payments.
+      responses:
+        200:
+          description: All payments in a list. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/payment_response_container'
+        400:
+          description: Bad Request. Payments haven't been set up in this dashboard yet, or if invalid sort parameters are passed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: Payments is not enabled on this dashboard
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Payments
+      summary: Creates a new payment
+      description: Creates a new payment with the provided message to the provided contact.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_payment_request'
+      responses:
+        200:
+          description: The new payment. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/payment'
+        400:
+          description: Bad Request. Request info is invalid or missing, or payments haven't been set up in this dashboard yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: Payments is not enabled on this dashboard
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/payments/{payment_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: payment_id
+            in: path
+            description: 'Id of payment'
+            required: true
+            schema:
+                type: integer
+                example: 2510
+      tags:
+      - Payments
+      summary: Retrieves the payment with the specified id.
+      description: Retrieves the payment with the specified id.
+      responses:
+        200:
+          description: The payment's details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/payment'
+        204:
+          description: No payment in the dashboard matches the provided id.
+        400:
+          description: Bad Request. Payments haven't been set up in this dashboard yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: Payments is not enabled on this dashboard
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/payments/{payment_id}/mark_as_paid':
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: payment_id
+            in: path
+            description: 'Id of payment'
+            required: true
+            schema:
+                type: integer
+                example: 2510
+      tags:
+      - Payments
+      summary: Mark a payment as paid
+      description: Closes a payment as "paid". Use this endpoint for when the payment is paid through a means other than the payment request portal. This will close the payment and add its payment amount to your statistics. This endpoint is not required for payments paid through the payments-portal sent through Text Request; that will automatically mark a payment as paid.
+      responses:
+        200:
+          description: The payment that was marked as paid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/payment'
+              #example:
+              #  textrequest_payment_status: Paid
+        400:
+          description: Bad Request. This payment was paid or cancelled, and so is no longer in progress, or payments haven't been set up in this dashboard yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: Payment request is not in progress
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/payments/{payment_id}/resend':
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: payment_id
+            in: path
+            description: 'Id of payment'
+            required: true
+            schema:
+                type: integer
+                example: 2510
+      tags:
+      - Payments
+      summary: Send a follow-up text reminding the user to pay the specified payment.
+      description: Sends a reminder. Only one reminder can be sent per payment
+      responses:
+        200:
+          description: The payment reminder was sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/payment'
+              #example:
+              #  reminder_was_sent: true
+        400:
+          description: Bad Request. This payment was paid or cancelled, and so is no longer in progress, a reminder has already been sent for this payment, or payments haven't been set up in this dashboard yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: A reminder for this payment request has already been sent.
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/payments/{payment_id}/cancel':
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: payment_id
+            in: path
+            description: 'Id of payment'
+            required: true
+            schema:
+                type: integer
+                example: 2510
+      tags:
+      - Payments
+      summary: Cancels the specified payment.
+      description: Cancels the specified payment, texting the user that the payment has been cancelled. Payments cannot be editted, so cancelling and issuing a new payment is the best way to correct a payment.
+      responses:
+        200:
+          description: The payment was cancelled. Returns the payment, now with the cancelled status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/payment'
+              #example:
+              #  textrequest_payment_status: Cancelled
+        400:
+          description: Bad Request. This payment was paid or cancelled, and so is no longer in progress, or payments haven't been set up in this dashboard yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example: 
+                message: A reminder for this payment request has already been sent.
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/activate_payments':
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+      - Payments
+      summary: Activates payments for a dashboard.
+      description: Turns payments on or off based on input. If an authvia merchant id does not exist for this account, one is created.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active:
+                  type: boolean
+      responses:
+        200:
+          description: The activation was successful
+        400:
+          description: Bad Request. This payment was paid or cancelled, and so is no longer in progress, or payments haven't been set up in this dashboard yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+              example:
+                message: A reminder for this payment request has already been sent.
+                errorCode: null 
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+
+  ############################
+  # Reviews
+
+  '/dashboards/{dashboard_id}/reviews':
+    summary: Reviews for the dashboard level.
+    description: Review retrieval for all reviews in a given dashboard.
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: Id of dashboard
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: start_date
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: end_date
+            in: query
+            required: false
+            schema:
+                type: string
+                format: date-time
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Reviews
+      summary: Retrieves all reviews that match the specified filtering criterion.
+      description: As many as all filter parameters and as few as none may be set. Only the dashboard specified will be searched; reviews are organized by dashboard. There is no account level search for a number available.
+      responses:
+        200:
+          description: A list of reviews. 
+          content:
+            application/json:
+                schema:
+                  $ref: '#/components/schemas/review_response_container'
+        400:
+          description: Bad request. Sent if a query is invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  '/dashboards/{dashboard_id}/campaigns':
+    summary: Campaigns for the dashboard level.
+    description: Campaign retrieval for all campaigns in a given dashboard.
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: Id of dashboard
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: include_archived
+            in: query
+            schema:
+                type: boolean
+                default: false
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+      - Reviews
+      summary: Retrieves all campaigns.
+      responses:
+        200:
+          description: A list of campaigns.
+          content:
+            application/json:
+                schema:
+                  $ref: '#/components/schemas/campaign_response_container'
+        400:
+          description: Bad request. Sent if a query is invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+  
+  '/dashboards/{dashboard_id}/campaigns/{campaign_id}':
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: campaign_id
+            in: path
+            description: 'Id of campaign'
+            required: true
+            schema:
+                type: integer
+      tags:
+      - Reviews
+      summary: Retrieves the campaign with the specified id.
+      description: Retrieves the campaign with the specified id.
+      responses:
+        200:
+          description: The campaign's details. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/campaign'
+        204:
+          description: No campaign in the dashboard matches the provided id.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+
+  ############################
+  # Webhooks
+
+  /eventTypes:
+    get:
+      tags:
+        - Webhooks
+      summary: Retrieve all available web hooks types
+      description: 'Retrieve all available web hook types.'
+      responses:
+        200 : 
+          description: 'All webhooks types.'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example:
+                - "webhook_type_1"
+                - "webhook_type_2"
+                - "webhook_type_3"
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+  /dashboards/{dashboard_id}/hooks:
+    get:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: page
+            in: query
+            description: 'The page number. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 0
+        -
+            name: page_size
+            in: query
+            description: 'The number of items returned. The first item returned will be page multiplied by page_size'
+            required: false
+            schema:
+                type: integer
+                default: 100
+      tags:
+        - Webhooks
+      summary: Retrieve all web hooks for a dashboard
+      description: 'Retrieve all web hooks for a dashboard.'
+      responses:
+        200 : 
+          description: 'All webhooks in the specified dashboard.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webhook'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    post:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+      tags:
+        - Webhooks
+      summary: Register Web Hook
+      description: 'Registers a new Web Hook. Web hooks can be registered to send callbacks when messages are received, sent, or when a contact is created. You can make multiple webhooks from the same event, but not hitting the same url. Webhooks can be used for third party integrations such as Zapier and other partner integrations. Press **Callbacks** below to see event types.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/post_webhook_request'
+      callbacks:
+        MessageSentPayload:
+          msg_sent:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_msg'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          msg_received:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_msg'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          contact_created:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_contact_created'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          contact_updated:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_contact_updated'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          payment_status_updated:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_payment'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          msg_status_updated:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_message_status'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          location_received:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_location_callback'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          keyword_subscribed:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_keyword_callback'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+          keyword_unsubscribed:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/webhook_payload_keyword_callback'
+              responses:
+                '200':
+                  description: Your server returns this code if it accepts the callback
+      responses:
+        201 : 
+          description: 'The new webhook'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webhook'
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        409:
+          description: Conflict. A webhook for this event and url already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+  
+  /dashboards/{dashboard_id}/hooks/{webhook_id}:
+    delete:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: webhook_id
+            in: path
+            description: 'Id of the web hook that you want to delete'
+            required: true
+            schema:
+                type: integer
+                example: 56
+      tags:
+      - Webhooks
+      summary: Deletes a web hook
+      description: 'Removes a web hook from a phone number.'
+      responses:
+        204: 
+          description: The webhook was deleted successfully.
+        400:
+          description: Bad request. Sent if required properties are omitted or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+    put:
+      parameters:
+        -
+            name: dashboard_id
+            in: path
+            description: 'Id of dashboard'
+            required: true
+            schema:
+                type: integer
+                example: 121
+        -
+            name: webhook_id
+            in: path
+            description: 'Id of the web hook that you want to delete'
+            required: true
+            schema:
+                type: integer
+                example: 56
+      tags:
+      - Webhooks
+      summary: Activates a web hook
+      description: Reactivates a disconnected or inactive web hook
+      responses:
+        204:
+          description: The web hook was updated.
+        401:
+          description: Unauthorized. Sent if the API key is omitted or invalid. 
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/error'
+
+
+components:
+  schemas:
+    error:
+      type: object
+      properties:
+        status:
+          type: integer
+          description: The HTTP status code returned from the server.
+          example: 400
+        message:
+          type: string
+          description: A human readable description of the reason for the error. 
+          example: The server is currently on fire. 
+        errorCode:
+          type: string
+          description: A one-word descriptor of the error that can be referenced when troubleshooting. 
+          example: parameterInvalid
+
+    pagination_info:
+      properties:
+        page:
+          type: integer
+          default: 0
+          description: The current page of this get request
+        page_size:
+          type: integer
+          default: 100
+          description: The current page-size of this get request
+        total_items:
+          type: integer
+          example: 172
+          description: The total number of queryable items
+
+
+    post_contact_request:
+      type: object
+      properties:
+        first_name: 
+          type: string
+          description: The contact's first name. 
+          example: John
+        last_name: 
+          type: string
+          description: The contact's last name. 
+          example: Smith
+        display_name: 
+          type: string
+          description: The contact's display name. 
+          example: John Smith
+        is_suppressed: 
+          type: boolean
+          description: Whether the contact is suppressed. 
+          example: false
+        is_archived: 
+          type: boolean
+          description: Whether the contact is archived. 
+          example: false
+        is_blocked: 
+          type: boolean
+          description: Whether the contact is blocked. 
+          example: false
+        suppressed_reason:
+          type: string
+          description: For notekeeping, a reason why the contact was suppressed.
+          example: null
+        note:
+          type: string
+          description: Any text notes for the contact.
+          example: Contact from newsletter.
+        groups:
+          type: array
+          items:
+            type: integer
+          description: An array of group identifiers that reference group membership. 
+        contact_tags:
+          type: array
+          items:
+            type: string
+          description: An array of contact tag unique identifiers that reference tags that should be attached to this contact. This argument is optional and can be omitted or set to null. An empty array will remove all tags from the contact. 
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/custom_field_entry'
+          description: An array of custom field identifiers that override the current custom field values by id. This argument is optional and can be omitted or set to null. An empty array will remove all custom fields from the contact.
+        is_resolved:
+          type: boolean
+          description: Whether or not their conversation thread is currently resolved.
+          example: false
+    
+    patch_contact_request:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            type: integer
+          example:
+            - 12
+            - 26
+          description: An array of group identifiers that reference group membership to add or remove from the contact.
+        add_group_to_contact: 
+          type: boolean
+          description: Whether to add or remove the contact tag from the contact. True means add. False means remove. This will only do something if a value for group is provided.
+          example: True
+        contact_tags:
+          type: array
+          items:
+            type: string
+          example:
+            - a8608167-caf8-485c-a0c5-d97fb0fc9069
+            - 54b35406-189d-4e70-a170-c87e231f8ca3
+          description: An array of the contact's tags to add or remove from the contact.
+        add_tag_to_contact: 
+          type: boolean
+          description: Whether to add or remove the contact tag from the contact. True means add. False means remove. This will only do something if a value for contact_tag is provided.
+          example: True
+        custom_field_id:
+          type: string
+          description: A custom field identifier for a custom field to edit/add to this contact. This argument is optional and can be omitted or set to null, which will cause no change to the contact's custom fields.
+          example: "cc63eb7d-3575-478f-b42e-1e64e40d41c9"
+        custom_field_value: 
+          type: boolean
+          description: The new value for the custom field. This will only do something if a value for custom_field_id is provided.
+          example: "john.doe@gmail.com"
+
+    update_contact_request:
+      type: object
+      properties:
+        phone_number: 
+          type: string
+          description: The contact's identifying phone number. 
+          example: "321-654-7890"
+        first_name: 
+          type: string
+          description: The contact's first name. 
+          example: John
+        last_name: 
+          type: string
+          description: The contact's last name. 
+          example: Smith
+        display_name: 
+          type: string
+          description: The contact's display name. 
+          example: John Smith
+        is_suppressed: 
+          type: boolean
+          description: Whether the contact is suppressed. 
+          example: false
+        is_archived: 
+          type: boolean
+          description: Whether the contact is archived. 
+          example: false
+        is_blocked: 
+          type: boolean
+          description: Whether the contact is blocked. 
+          example: false
+        suppressed_reason:
+          type: string
+          description: For notekeeping, a reason why the contact was suppressed.
+          example: null
+        note:
+          type: string
+          description: Any text notes for the contact.
+          example: Contact from newsletter.
+        groups:
+          type: array
+          items:
+            type: integer
+          description: An array of group identifiers that reference group membership. 
+        contact_tags:
+          type: array
+          items:
+            type: string
+          description: An array of contact tag unique identifiers that reference tags that should be attached to this contact. This argument is optional and can be omitted or set to null. An empty array will remove all tags from the contact. 
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/custom_field_entry'
+          description: An array of custom field identifiers that override the current custom field values by id. This argument is optional and can be omitted or set to null. An empty array will remove all custom fields from the contact.
+        is_resolved:
+          type: boolean
+          description: Whether or not their conversation thread is currently resolved.
+          example: false
+
+    contact_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/contact'
+    
+    contact:
+      type: object
+      properties:
+        phone_number: 
+          type: string
+          description: The contact's phone number. 
+          example: "13216547890"
+        first_name: 
+          type: string
+          description: The contact's first name. 
+          example: John
+        last_name: 
+          type: string
+          description: The contact's last name. 
+          example: Smith
+        display_name: 
+          type: string
+          description: The contact's display name. 
+          example: John Smith
+        thread_id: 
+          type: string
+          description: The id of the thread for this contact's conversation on this dashboard. To access the thread of this contact in the webapp, go to https://app.textrequest.com/app/thread/<thread_id>
+          example: 166382ad-72ce-466a-bc64-ce5247905e43
+        is_suppressed: 
+          type: boolean
+          description: Whether the contact is suppressed. 
+          example: false
+        is_archived: 
+          type: boolean
+          description: Whether the contact is archived. 
+          example: false
+        is_blocked: 
+          type: boolean
+          description: Whether the contact is blocked. 
+          example: false
+        suppressed_reason:
+          type: string
+          description: For notekeeping, a reason why the contact was suppressed.
+          example: Contact asked not to be texted.
+        note:
+          type: string
+          description: Any text notes for the contact.
+          example: Lead from newsletter
+        groups:
+          type: array
+          items:
+            type: integer
+          example:
+            - 12
+            - 26
+          description: An array of group identifiers that reference group membership. 
+        contact_tags:
+          type: array
+          items:
+            type: string
+          example:
+            - a8608167-caf8-485c-a0c5-d97fb0fc9069
+            - 54b35406-189d-4e70-a170-c87e231f8ca3
+          description: An array of the contact's tags.
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/custom_field_entry'
+          description: An array of the contact's custom field values.
+        is_resolved:
+          type: boolean
+          description: Whether or not their conversation thread is currently resolved.
+          example: false
+        first_contact_utc:
+          type: string
+          description: When the contact was first messaged. All dates are UTC.
+          example: false
+        opted_out_utc:
+          type: string
+          description: When the contact opted out. Null if the contact has not and can receive messages.
+          example: null
+        last_msg_sent_utc:
+          type: string
+          format: date-time
+          description: When the contact was last sent a message.
+          example: null
+        last_msg_received_utc:
+          type: string
+          format: date-time
+          description: When this dashboard last received a message from a contact.
+          example: null
+        total_msgs_sent:
+          type: integer
+          description: Total messages sent to a contact.
+          example: 0
+        total_msgs_received:
+          type: integer
+          description: Total messages received from a contact.
+          example: 0
+        response_count:
+          type: integer
+          description: Total number of response messages from the contact.
+          example: 0
+        date_created_utc:
+          type: string
+          format: date-time
+          description: When the contact was created.
+          example: null
+        last_contact_date_utc:
+          type: string
+          format: date-time
+          description: When the contact was last contacted.
+          example: null
+        last_message:
+          type: object
+          description: Last message sent to or from this contact.
+          example: null
+
+    custom_field_entry:
+      type: object
+      properties:
+        id: 
+          type: string
+          description: The custom field's guid you can use to edit the value.
+          example: cc63eb7d-3575-478f-b42e-1e64e40d41c9
+        value: 
+          type: string
+          description: Current value of the custom field.
+          example: john.doe@gmail.com
+
+
+    post_group_request:
+      type: object
+      required:
+      - name
+      properties:
+        name: 
+          type: string
+          description: Name of the group. 
+          example: Employees
+        notes: 
+          type: string
+          description: Any notes on this group. 
+          example: This list will hold all current employees.
+    
+    group_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/group'
+
+    group:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The group identifier. This will appear in contacts indicating group membership. 
+          example: 121
+        group_member_count: 
+          type: integer
+          description: Number of members of the group. 
+          example: 0
+        is_keyword: 
+          type: boolean
+          description: If this group is a keyword group. Such groups are autogenerated when a user sets up a keyword. Contacts are automatically added when they enroll. 
+          example: false
+        name: 
+          type: string
+          description: Name of the group. 
+          example: Employees
+        notes: 
+          type: string
+          description: Any notes on this group. 
+          example: This list will hold all current employees.
+        last_message_sent_utc: 
+          type: string
+          format: date-time
+          description: Last group message sent from here. 
+          example: This list will hold all current employees.
+
+
+    post_user_request:
+      type: object
+      required:
+      - name
+      properties:
+        first_name: 
+          type: string
+          description: First name of the user. 
+          example: John
+        last_name: 
+          type: string
+          description: Last name of the user. 
+          example: Doe
+        is_administrator: 
+          type: boolean
+          description: If this user is an administrator. Administrators always have access to all dashboards, as well as the ability to change all settings for an account.
+          example: false
+        email: 
+          type: string
+          description: Email address of the user. The email address functions as the user's username, and so a single email address cannot be shared between several Text Request accounts.
+          example: john.doe@wefixwindows.com
+        password: 
+          type: string
+          description: Password for the user to access their account.
+          example: 8aw5vm232b4xkjdr
+        external_user_id: 
+          type: string
+          description: The external id of the user. The external id is only used as part of the api to label users for filtering and searching. Multiple users can have the same external id.
+          example: johndoe_1
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/user_permission'
+
+    update_user_request:
+      type: object
+      required:
+      - name
+      properties:
+        first_name: 
+          type: string
+          description: First name of the user. 
+          example: John
+        last_name: 
+          type: string
+          description: Last name of the user. 
+          example: Doe
+        is_administrator: 
+          type: boolean
+          description: If this user is an administrator. Administrators always have access to all dashboards, as well as the ability to change all settings for an account.
+          example: false
+        external_user_id: 
+          type: string
+          description: The external id of the user. The external id is only used as part of the api to label users for filtering and searching. Multiple users can have the same external id.
+          example: johndoe_1
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/user_permission'
+    
+    user_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/user'
+
+    user:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The user identifier. Required to update or delete users.
+          example: 508
+        first_name: 
+          type: string
+          description: First name of the user. 
+          example: John
+        last_name: 
+          type: string
+          description: Last name of the user. 
+          example: Doe
+        is_administrator: 
+          type: boolean
+          description: If this user is an administrator. Administrators always have access to all dashboards, as well as the ability to change all settings for an account.
+          example: false
+        email: 
+          type: string
+          description: Email address of the user. The email address functions as the user's username.
+          example: john.doe@wefixwindows.com
+        external_user_id: 
+          type: string
+          description: The external id of the user. The external id is only used as part of the api to label users for filtering and searching. Multiple users can have the same external id.
+          example: johndoe_1
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/user_permission'
+
+    user_permission:
+      type: object
+      properties:
+        dashboard_id: 
+          type: integer
+          description: The dashboard identifier. This will be used with all API calls at dashboard level. 
+          example: 121
+        role: 
+          type: string
+          description: Specific permission level of this user. Can be either "Manager" or "CSR" (Customer Service Rep). For giving a user admin permissions, see the is_administrator user flag.
+          example: manager
+
+    
+    post_keyword_request:
+      type: object
+      required:
+      - keyword_value
+      properties:
+        keyword_value: 
+          type: string
+          description: Name of the keyword group. 
+          example: Employees
+        response: 
+          type: string
+          description: Any notes on this keyword group. 
+          example: This list will hold all current employees.
+    
+    keyword_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/keyword'
+
+    keyword:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The keyword identifier. 
+          example: 121
+        subscribers_count: 
+          type: integer
+          description: Number of members of the keyword. 
+          example: 0
+        keyword_value: 
+          type: string
+          description: Name of the keyword. 
+          example: Employees
+        date_created: 
+          type: string
+          format: date-time
+          description: When the keyword was created. 
+          example: "2022-01-12T19:19:11.8032151Z"
+        response: 
+          type: string
+          description: The response for the keyword. 
+          example: null
+        group_id: 
+          type: integer
+          description: The group associated with this keyword. Use it to retrieve members of the keyword. 
+          example: 1
+
+    
+    dashboard_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/dashboard'
+    
+    dashboard:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The dashboard identifier. This will be used with all API calls at dashboard level. 
+          example: 121
+        name: 
+          type: string
+          description: Name of the dashboard. 
+          example: Marketing
+        phone: 
+          type: string
+          description: Texting number associated with this dashboard. 
+          example: '15551234567'
+
+    post_dashboard_request:
+      type: object
+      properties:
+        name: 
+          type: string
+          description: Name of the dashboard. 
+          example: "John Doe's Line"
+        phone: 
+          type: string
+          description: Texting number associated with this dashboard. 
+          example: '+1(555)-123-4567'
+
+    put_dashboard_request:
+      type: object
+      properties:
+        name: 
+          type: string
+          description: Name of the dashboard. 
+          example: "John Doe's Line"
+
+    custom_field:
+      type: object
+      properties:
+        id: 
+          type: string
+          description: This will be a Guid that you can use to set a contact's custom field. 
+          example: 750d2ef9-d818-4c27-be9f-09978e1b43ee
+        name: 
+          type: string
+          description: Name of the custom field. 
+          example: Email
+
+    post_custom_field:
+      type: object
+      properties:
+        name: 
+          type: string
+          description: Name of the custom field. 
+          example: Email
+
+    
+    tag_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/tag'
+
+    tag:
+      type: object
+      properties:
+        id: 
+          type: string
+          description: This will be a Guid. 
+          example: 06051c49-15fe-4728-9a3f-63c5d9fd47a2
+        tag_color: 
+          type: string
+          description: This is the color of the tag. Should be a valid hexadecimal. 
+          example: "#1EB1C4"
+        tag: 
+          type: string
+          description: Name of the tag. 
+          example: Tyler
+
+    post_tag_request:
+      type: object
+      properties:
+        tag_color: 
+          type: string
+          description: This is the color of the tag. Should be a valid hexadecimal. 
+          example: "#1EB1C4"
+        tag: 
+          type: string
+          description: Name of the tag. 
+          example: Partners
+
+    post_message_request:
+      type: object
+      required:
+      - from
+      - to
+      - body
+      properties:
+        from: 
+          type: string
+          description: A ten or eleven digit phone number in your Text Request account that you are sending the message from. This field should be digits only. The country code of "1" is optional. This field is required. 
+          example: 4232180111
+        to: 
+          type: string
+          description: The message recipient's ten or eleven digit North American phone number. This field should be digits only. The country code of "1" is optional. This field is required. 
+          example: 4239309346
+        body: 
+          type: string
+          description: The message body. This should be 1600 characters in length or less. If the body exceeds 1600 characters, a 400 bad request will be returned. This field is required. 
+          example: Don't forget the Family and Friends sale at our Toledo location on 6-15-2021 at 8:00PM!
+        sender_name:
+          type: string
+          description: Specify who sent this message. This can be any text that is 41 characters or less in length. If this field is omitted, the sender will be listed as 'API'
+          example: Bill Cassidy
+        status_callback:
+          type: string
+          format: uri
+          description: A URL that Text Request will callback with message delivery information. See the callbacks tab on /messages and /dashboards/{dashboard_id}/contacts/{phone_number}/messages for the schema of the callback
+          example: enter-url-here
+        location_callback:
+          type: string
+          format: uri
+          description: A URL that Text Request will callback with contact location information. Requires the insertion of the [LocationRequest] tag in the message body for the link contacts will use. See the callbacks tab on /messages and /dashboards/{dashboard_id}/contacts/{phone_number}/messages for the schema of the callback
+          example: enter-url-here
+        mms_media:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: An array of Text Request MMS media urls to access the mms media to be attached and sent with this message (see /mms). This argument is optional and can be omitted, set to null, or set to an empty array. 
+        authvia_conversation_id:
+          type: string
+          description: The Authvia conversation Id for this payment request
+        geolocation_requested:
+          type: boolean
+          description: Whether the message should include a location request, appended to the end of the message body.
+
+    post_message_response:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: The message's unique identifier. 
+          example: eb2a0cc2-5b88-468b-b3f4-926b07bcb275
+        segments_count:
+          type: integer
+          description: The total number of segments for this message.
+          example: 2
+        from: 
+          type: string
+          description: The eleven digit phone number in your Text Request account that the message was sent from
+          example: 14232180111
+        to: 
+          type: string
+          description: The eleven digit phone number that you sent the message to. 
+          example: 14239309346
+        status:
+          type: string
+          description: This will be "sending" or "error". An error may occur if the phone number is invalid or the recipient has previously opted out. 
+          example: sending
+    
+    message_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/message'
+
+    message:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: The message's unique identifier. 
+          example: eb2a0cc2-5b88-468b-b3f4-926b07bcb275
+        body:
+          type: string
+          description: The message's text. 
+          example: 'I am reaching back out.'
+        message_direction:
+          type: string
+          description: The message direction. R if the message was sent from the contact's phone, S if the message was sent from the dashboard. 
+          example: S
+        response_by_username:
+          type: string
+          description: Name of Text Request user that sent the most recent message response
+          example: "John Doe"
+        message_timestamp_utc:
+          type: string
+          format: date-time
+          description: Timestamp of when the message was queued to be sent.
+        delivery_status:
+          type: string
+          enum: ["accepted", "queued", "sending", "error", "sent", "failed", "undelivered", "delivered"]
+          description: Message's current delivery state.
+          example: sending
+        delivery_error:
+          type: string
+          description: An alphanumeric error code that can be used for reference when troubleshooting. This will be null if the status is "sending".
+          example: '2005'
+        mms_media:
+          type: array
+          items:
+            type: string
+            format: uri
+          example:
+          - https://textrequeststorage.com/182739/3fd60fc2-1759-4dee-ac6f-4a97b994b84f.jpeg
+          - https://textrequeststorage.com/182739/c89c8c6a-8883-44cd-b833-f8b4dc8fbba4.png
+          description: An array of MMS media urls to access the mms media that was attached and sent with this message. 
+    
+    dashboard_message_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/dashboard_message'
+
+    dashboard_message:
+      allOf:
+      - $ref: '#/components/schemas/message'
+      - type: object
+        properties:
+          dashboard_phone:
+            type: string
+            description: Phone number the text messages was sent from. Will be the dashboard number if the  
+            example: '14235613652'
+          customer_phone:
+            type: string
+            description: The message's text. 
+            example: '14252335575'
+          segments_count:
+            type: number
+            example: 2
+            description: The number of segments billed for this particular message. For more information on segments and billing, see https://help.textrequest.com/message-character-count
+      
+    contact_message_request:
+      type: object
+      properties:
+        body:
+          type: string
+          description: The message's text. 
+          example: 'I am reaching back out.'
+        sender_name:
+          type: string
+          description: Specify who sent this message. This can be any text that is 41 characters or less in length. If this field is omitted, the sender will be listed as 'API'
+          example: Bill Cassidy    
+        status_callback:
+          type: string
+          format: uri
+          description: A URL that Text Request will callback with message delivery information. See https://app.swaggerhub.com/apis/Text-Request/Text-Request/3.0#/delivery_status_callback for the schema of the callback
+          example: enter-url-here
+        location_callback:
+          type: string
+          format: uri
+          description: A URL that Text Request will callback with location information. See https://app.swaggerhub.com/apis/Text-Request/Text-Request/3.0#/delivery_location_callback for the schema of the callback
+          example: enter-url-here
+        mms_media:
+          type: array
+          items:
+            type: string
+          description: An array of Text Request MMS media urls to access the mms media to be attached and sent with this message (see /mms). This argument is optional and can be omitted, set to null, or set to an empty array.           
+
+    conversation_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/conversation'
+
+    conversation:
+      type: object
+      properties:
+        phone_number:
+          type: string
+          description: The contact's phone number. 
+          example: '13216547890'
+        last_message:
+          $ref: '#/components/schemas/message'
+          description: The last received message in this conversation
+
+
+    post_payment_request:
+      type: object
+      required:
+      - description
+      - customer_phone
+      - amount_requested
+      properties:
+        message: 
+          type: string
+          description: Message text to send to contact along with authvia payment link.
+          example: Thank you for choosing Generic Plumbing! Please click the link below to pay the balance for today's appointment.
+        description: 
+          type: string
+          description: Description of the payment. Description is not shown to the contact and is only used by internal users for context about payments.
+          example: Housecall for plumbing services
+        customer_phone: 
+          type: string
+          description: The contact's phone number. 
+          example: 321-654-7890
+        amount_requested:
+          type: number
+          format: float
+          description: The amount in dollars requested by this payment. 
+          example: 220.50
+        reference_number: 
+          type: string
+          description: 'User-defined id defined when payments are created that can be used to quickly find payments. Reference numbers are not unique; many payments can have the same reference.'
+          example: receipt-chicago
+
+    payment_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/payment'
+
+    payment:
+      type: object
+      properties:
+        payment_id: 
+          type: integer
+          description: The payment identifier. This will be used to update payments in the api.
+          example: 2510
+        request_date: 
+          type: string
+          format: date-time
+          description: Timestamp of when initial payment message was queued to be sent.
+          example: 0
+        recipient: 
+          type: string
+          description: Name of the payment recipient. May be null if the contact does not have a name associated with their phone number. 
+          example: John Doe
+        description: 
+          type: string
+          description: Description of the payment. Description is not shown to the contact and is only used by internal users for context about payments.
+          example: Housecall for plumbing services
+        customer_phone: 
+          type: string
+          description: The contact's phone number. 
+          example: 13216547890
+        amount_requested:
+          type: number
+          format: float
+          description: The amount in dollars requested by this payment. 
+          example: 220.50
+        is_past_due: 
+          type: boolean
+          description: If this payment is past the request date
+          example: false
+        reminder_was_sent: 
+          type: boolean
+          description: If a text reminder has already been sent for this payment
+          example: false
+        transaction_status: 
+          type: string
+          enum: [Unknown, Approved, Declined, NotAuthorized, Error, Processing, Failed, Authorized, PaymentInProgress]
+          description: Status of the transaction in authvia. Starts as Unknown.
+          example: Unknown
+        textrequest_payment_status: 
+          type: string
+          enum: [Unknown, Sent, Paid, Cancelled, Failed, PastDue, MarkedAsPaid]
+          description: Status of the transaction in Text Request. Represents that status shown in the payments page on the Text Request app. Starts as Sent.
+          example: Sent
+        reference_number: 
+          type: string
+          description: 'User-defined id defined when payments are created that can be used to quickly find payments. Reference numbers are not unique; many payments can have the same reference.'
+          example: receipt-chicago
+
+
+    campaign_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/campaign'
+
+    campaign:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The campaign identifier. Required to update or delete campaigns.
+          example: 508
+        name:
+          type: string
+          description: Name of the campaign.
+          example: First-time Customers Reviews
+        base_link: 
+          type: string
+          description: The generic url to give to customers to leave a review using Text Request's reviews system. This url is not a customized URL, like the kind that is generated when sending review requests in texts, so reviews left using a generic url cannot be tracked back to the customer (and so be marked as "requested").
+          example: enter-url-here
+          format: uri
+        date_created:
+          type: string
+          format: date-time
+          description: Timestamp of when the review was left.
+        is_archived:
+          type: boolean
+          description: Whether the campaign is archived.
+          example: false
+
+    review_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/review'
+
+    review:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The review identifier. Required to update or delete reviews.
+          example: 508
+        platform: 
+          type: string
+          enum: [Google, Facebook, Text Request]
+          description: Platform that this review is from. If the review was left as private feedback on Text Request's review-request page, the platform will be "Text Request".
+          example: Facebook
+        review_date_utc:
+          type: string
+          format: date-time
+          description: Timestamp of when the review was left.
+        review_message:
+          type: string
+          description: The review.
+          example: Fantastic service. 10 out of 10!
+        reviewer_name:
+          type: string
+          description: The name of the reviewer.
+          example: Robert Smith
+        star_rating: 
+          type: integer
+          description: The star rating of the review, if applicable. Some reviews will have a thumbs-up/thumbs-down ratings instead (see is_positive_recommendation).
+          example: null
+        is_positive_recommendation: 
+          type: boolean
+          description: The thumbs-up/thumbs-down rating of the review, if applicable. Some reviews will have a star rating instead (see star_rating).
+          example: true
+        resopnse_message:
+          type: string
+          description: The message left by the location owner if they have responded to the review.
+          example: Glad you enjoyed your time! We hope you will come again.
+        response_utc:
+          type: string
+          format: date-time
+          description: Timestamp of when the response was left.
+        source:
+          type: string
+          enum: [organic, requested]
+          description: Whether this review was left due to a Text Request review request text, or if it was organically left.
+          example: requested
+        campaign_id: 
+          type: integer
+          description: Id of the campaign that requested this review. If the review source is organic, this will be null.
+          example: 1042
+        campaign_name: 
+          type: string
+          description: Name of the campaign that requested this review. If the review source is organic, this will be null.
+          example: First-time Customers Reviews
+
+          
+    post_webhook_request:
+      type: object
+      required:
+      - name
+      properties:
+        target_url: 
+          type: string
+          description: The url that will be called when the web hook is triggered.
+          example: enter-url-here
+          format: uri
+        event: 
+          type: string
+          enum: [msg_sent, msg_received, contact_created, msg_status_updated, location_received, payment_status_updated, contact_updated]
+          description: The event type that you registered for.
+          example: msg_sent
+        http_verb: 
+          type: string
+          enum: [PUT, POST, DELETE]
+          description: The HTTP verb that will be used when the webhook is triggered. This cannot be GET.
+          example: PUT
+          default: POST
+    
+    webhook_response_container:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/pagination_info'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/webhook'
+
+    webhook:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The webhook identifier. You will need this identifier if you decide to remove this web hook. Deleting the dashboard will automatically remove all hooks for the deleted dashboard.
+          example: 1414
+        target_url: 
+          type: string
+          description: The url that will be called when the web hook is triggered.
+          example: https://www.someurl.com/user-defined-public-endpoints/webhook-endpoint
+          format: uri
+        event: 
+          type: string
+          enum: [msg_sent, msg_received, contact_created, msg_status_updated, location_received, payment_status_updated, contact_updated]
+          description: The event type that you registered for.
+          example: msg_sent
+        dashboard_id:
+          type: integer
+          description: The dashboard id for the Text Request dashboard that this web hook applies to. 
+          example: 121
+        httpVerb: 
+          type: string
+          enum: [PUT, POST, DELETE]
+          description: The HTTP verb that will be used when the webhook is triggered. This cannot be GET.
+          example: PUT
+          default: POST
+        is_user_defined: 
+          type: boolean
+          description: If the hook was defined from the Text Request web portal. False if the hook was defined via the API.
+          example: false
+        is_connected:
+          type: boolean
+          description: If the hook was disconnected from Text Request by the webhook failing to receive a 2XX or 3XX response 10 times in a row.
+          example: false
+
+    webhook_payload_account:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The account identifier.
+          example: 1414
+        externalAccountId: 
+          type: string
+          description: User-defined secondary identifier for accounts. External account id is not used by text request internally, but could be filled and searched by in the API. External ids is a deprecated feature from ApiV2. If you wish to access it, please contact Text Request support.
+          example: e3c9340e-f091-4023-891a-2c8b679ccf36
+
+    webhook_payload_dashboard:
+      type: object
+      properties:
+        id: 
+          type: integer
+          description: The account identifier.
+          example: 121
+        externalPhoneId: 
+          type: string
+          description: User-defined secondary identifier for dashboards. External phone id is not used by text request internally, but could be filled and searched by in the API. External ids is a deprecated feature from ApiV2. If you wish to access it, please contact Text Request support.
+          example: 27054c2a-e0c3-4c6f-b84b-e08cfd69920a
+        description: 
+          type: string
+          description: Name of the dashboard. Can be edited through the API or in the Web App.
+          example: Marketing
+        phoneNumber: 
+          type: string
+          description: The dashboard's phone number. 
+          example: '13216547890'
+
+    webhook_payload_message:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The conversations's unique identifier. 
+          example: 21
+        date:
+          type: string
+          format: date-time
+          description: Timestamp of when the message was queued to be sent.
+        consumerPhoneNumber: 
+          type: string
+          description: The contact's phone number. 
+          example: '13216547890'
+        messageDirection:
+          type: string
+          description: The message direction. R if the message was sent from the contact's phone, S if the message was sent from the dashboard. 
+          example: R
+        message:
+          type: string
+          description: The message's text. 
+          example: 'I am reaching back out.'
+        numSegments:
+          type: integer
+          description: The number of segments in the text message. 
+          example: 22
+        status:
+          type: string
+          enum: [claimed, unclaimed]
+          description: Whether this message belongs to a "claimed" conversation. Claiming is a deprecated feature from ApiV2. If you wish to access it, please contact Text Request support.
+          example: unclaimed
+        claimedBy:
+          type: object
+          properties:
+            externalUserId: 
+              type: string
+            externalUserName:
+              type: string
+          description: Whether this message belongs to a "claimed" conversation. Claiming is a deprecated feature from ApiV2. If you wish to access it, please contact Text Request support.
+          example: null
+        consumerFriendlyName: 
+          type: string
+          description: The contact's display name. 
+          example: John Smith
+        mmsAttachments:
+          type: array
+          items:
+            type: object
+            properties:
+              mimeType: 
+                type: string
+                description: The mime type of the file being uploaded. Valid values are image/gif, image/jpeg, image/png, and video/mp4. 
+                example: image/jpeg
+              url:
+                type: string
+                description: The URL where the file can be downloaded. 
+                example: https://textrequeststorage.com/182739/3fd60fc2-1759-4dee-ac6f-4a97b994b84f.jpeg
+                format: uri
+          description: An array of MMS media urls to access the mms media that was attached and sent with this message. 
+
+    webhook_payload_keyword:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The keyword's unique identifier. 
+          example: 4
+        name:
+          type: string
+          description: The keyword's name. 
+          example: 'SUBSCRIBE'
+        response:
+          type: string
+          description: Automated response of the keyword, sent on subscription. 
+          example: 'Thank you for subscribing.'
+        numberOfSubscribers:
+          type: integer
+          description: The number of contacts now subscribed to the keyword. 
+          example: 235
+        groupId:
+          type: integer
+          description: The unique identifier of the keyword's group. 
+          example: 12
+
+    webhook_payload_msg:
+      type: object
+      properties:
+        messageUniqueIdentifier:
+          type: string
+          description: The message's unique identifier. 
+          example: eb2a0cc2-5b88-468b-b3f4-926b07bcb275
+        account:
+          $ref: '#/components/schemas/webhook_payload_account'
+          description: The account the message belongs to. 
+        yourPhoneNumber:
+          $ref: '#/components/schemas/webhook_payload_dashboard'
+          description: The dashboard the message belongs to. 
+        conversation:
+          $ref: '#/components/schemas/webhook_payload_message'
+          description: The dashboard the message belongs to. 
+
+    webhook_payload_contact_created:
+      type: object
+      properties:
+        ContactId: 
+          type: integer
+          description: The contact identifier.
+          example: 6489
+        LocationPhoneNumber: 
+          type: string
+          description: The dashboard's phone number. 
+          example: '13216547890'
+        ContactPhoneNumber: 
+          type: string
+          description: The contact's phone number. 
+          example: '13216547890'
+        ContactFriendlyName: 
+          type: string
+          description: The contact's display name. 
+          example: John Smith
+    
+    webhook_payload_contact_updated:
+      type: object
+      properties:
+        phone_number: 
+          type: string
+          description: The contact's phone number. 
+          example: "13216547890"
+        first_name: 
+          type: string
+          description: The contact's first name. 
+          example: John
+        last_name: 
+          type: string
+          description: The contact's last name. 
+          example: Smith
+        display_name: 
+          type: string
+          description: The contact's display name. 
+          example: John Smith
+        is_suppressed: 
+          type: boolean
+          description: Whether the contact is suppressed. 
+          example: false
+        is_archived: 
+          type: boolean
+          description: Whether the contact is archived. 
+          example: false
+        is_blocked: 
+          type: boolean
+          description: Whether the contact is blocked. 
+          example: false
+        suppressed_reason:
+          type: string
+          description: For notekeeping, a reason why the contact was suppressed.
+          example: Contact asked not to be texted.
+        note:
+          type: string
+          description: Any text notes for the contact.
+          example: Lead from newsletter
+        groups:
+          type: array
+          items:
+            type: integer
+          example:
+            - 12
+            - 26
+          description: An array of group identifiers that reference group membership. 
+        contact_tags:
+          type: array
+          items:
+            type: string
+          example:
+            - a8608167-caf8-485c-a0c5-d97fb0fc9069
+            - 54b35406-189d-4e70-a170-c87e231f8ca3
+          description: An array of the contact's tags.
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/custom_field_entry'
+          description: An array of the contact's custom field values.
+        is_resolved:
+          type: boolean
+          description: Whether or not their conversation thread is currently resolved.
+          example: false
+        first_contact_utc:
+          type: string
+          description: When the contact was first messaged. All dates are UTC.
+          example: false
+        opted_out_utc:
+          type: string
+          description: When the contact opted out. Null if the contact has not and can receive messages.
+          example: null
+
+    webhook_payload_payment:
+      type: object
+      properties:
+        payment_id: 
+          type: integer
+          description: The payment identifier. This will be used to update payments in the api.
+          example: 2510
+        status: 
+          type: string
+          enum: [Unknown, Sent, Paid, Cancelled, Failed, PastDue, MarkedAsPaid]
+          description: Status of the transaction in Text Request. Represents that status shown in the payments page on the Text Request app. Starts as Sent.
+          example: Sent
+        reference_id: 
+          type: string
+          description: 'User-defined id defined when payments are created that can be used to quickly find payments. Reference numbers are not unique; many payments can have the same reference.'
+          example: receipt-chicago
+
+    webhook_payload_message_status:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: The message's unique identifier. 
+          example: eb2a0cc2-5b88-468b-b3f4-926b07bcb275
+        status:
+          type: string
+          enum: ["error", "failed", "undelivered", "delivered"]
+          description: Current status of the message. This relates to the delivery_status property of GET Conversation calls.
+          example: delivered
+        errorCode:
+          type: string
+          description: An alphanumeric error code that can be used for reference when troubleshooting. This will be null if the status is anything except "error". See the `Delivery Status Webhook Error Codes` header above for a full list
+          example: null
+          
+    webhook_payload_location_callback:
+      type: object
+      properties:
+        MessageId:
+          type: string
+          description: The unique identifier of the message the request was sent in. 
+          example: eb2a0cc2-5b88-468b-b3f4-926b07bcb275
+        PhoneNumber:
+          type: string
+          description: The contact's phone number. 
+          example: '13216547890'
+        DashboardId:
+          type: integer
+          description: The dashboard id of the message the request was sent in. 
+          example: 121
+        Longitude:
+          type: number
+          format: float
+          description: The longitude of the contact's location. 
+          example: 38.8976763
+        Latitude:
+          type: number
+          format: float
+          description: The latitude of the contact's location.
+          example: -77.0365298
+        FormattedAddress:
+          type: string
+          description: The approximate address of the contact's location
+          example: Near 1600 Pennsylvania Ave NW, Washington, DC 20500-0003
+
+    webhook_payload_keyword_callback:
+      type: object
+      properties:
+        messageUniqueIdentifier:
+          type: string
+          description: The message's unique identifier. 
+          example: eb2a0cc2-5b88-468b-b3f4-926b07bcb275
+        account:
+          $ref: '#/components/schemas/webhook_payload_account'
+          description: The account the message belongs to. 
+        yourPhoneNumber:
+          $ref: '#/components/schemas/webhook_payload_dashboard'
+          description: The dashboard the message belongs to. 
+        conversation:
+          $ref: '#/components/schemas/webhook_payload_message'
+          description: The dashboard the message belongs to. 
+        keyword:
+          $ref: '#/components/schemas/webhook_payload_keyword'
+          description: The keyword subscribed or unsubscribed to. 
+
+    mms_media_upload:
+      type: object
+      properties:
+        file: 
+          type: string
+          format: binary
+          description: The binary file to upload. 
+    
+    mms_media:
+      type: object
+      properties:
+        mime_type: 
+          type: string
+          description: The mime type of the file being uploaded. Valid values are image/gif, image/jpeg, image/png, and video/mp4. 
+          example: image/jpeg
+        url:
+          type: string
+          description: The URL where the file can be downloaded. 
+          example: https://textrequeststorage.com/182739/3fd60fc2-1759-4dee-ac6f-4a97b994b84f.jpeg
+          format: uri
+          
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+security:
+  - ApiKeyAuth: []

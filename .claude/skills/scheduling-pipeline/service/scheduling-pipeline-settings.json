@@ -1,0 +1,18 @@
+{
+  "_comment": "Allow-list for the always-on scheduling-pipeline background session. Deliberately does NOT enable the telegram plugin and the launcher passes no --channels, so this session starts no Telegram bot (avoids the 409 conflict with ClaudeTelegramService). The pipeline calls Node scripts via Bash (which internally use the TR API, A+ Playwright, and the Slack bot token), so no Slack/Playwright MCP is needed here.",
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "ToolSearch",
+      "Skill",
+      "ScheduleWakeup",
+      "mcp__lcos__*"
+    ],
+    "deny": []
+  }
+}

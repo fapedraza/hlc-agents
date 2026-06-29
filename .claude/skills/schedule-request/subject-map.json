@@ -1,0 +1,205 @@
+{
+  "version": "2026-05-30",
+  "source": "Grounded in aplus-quals.json (98 A+ services, refreshed 2026-05-30).",
+  "about": "Maps customer-facing subject phrasings (from Text Request threads) to canonical A+ service-name terms. `services` are matched against a tutor's offered services with the same fuzzy rule the orchestrator uses (equals / contains / is-contained-by), so a root term like 'Chemistry' also catches combined services like 'Chemistry/Algebra 2'. Academic subject-tutoring, exam-prep, and college services are kept distinct. Consumed by lib/subject-map.js resolveSubject().",
+  "entries": [
+    {
+      "canonical": "English / Language Arts",
+      "category": "subject",
+      "aliases": ["english", "ib english", "ib english hl", "ib english sl", "honors english", "ap english", "ap lang", "ap literature", "english lit", "english literature", "literature", "language arts", "ela", "reading", "writing", "essay writing", "composition", "humanities"],
+      "services": ["Language Arts", "AP Language Arts", "Honors Literature"]
+    },
+    {
+      "canonical": "Math (general)",
+      "category": "subject",
+      "aliases": ["math", "mathematics", "maths", "general math", "middle school math", "common core math"],
+      "services": ["Math"]
+    },
+    {
+      "canonical": "Algebra",
+      "category": "subject",
+      "aliases": ["algebra", "algebra 1", "algebra i", "pre-algebra", "prealgebra"],
+      "services": ["Algebra", "Algebra 1/Biology"]
+    },
+    {
+      "canonical": "Algebra 2",
+      "category": "subject",
+      "aliases": ["algebra 2", "algebra ii", "advanced algebra", "adv algebra"],
+      "services": ["Algebra 2", "Adv Algebra 2", "Adv Algebra/Trig"]
+    },
+    {
+      "canonical": "Geometry",
+      "category": "subject",
+      "aliases": ["geometry", "geo"],
+      "services": ["Geometry"]
+    },
+    {
+      "canonical": "Trigonometry",
+      "category": "subject",
+      "aliases": ["trig", "trigonometry"],
+      "services": ["Adv Algebra/Trig"]
+    },
+    {
+      "canonical": "Pre-Calculus",
+      "category": "subject",
+      "aliases": ["precalc", "pre-calc", "precalculus", "pre-calculus", "ap precalc", "ap precalculus", "uw pre-calculus", "uw precalc"],
+      "services": ["Pre-Calculus", "AP Precalc", "UW Pre-Calculus"]
+    },
+    {
+      "canonical": "Calculus",
+      "category": "subject",
+      "aliases": ["calc", "calculus", "ap calc", "ap calculus", "ap calc ab", "ap calculus ab", "ap calc bc", "ap calculus bc"],
+      "services": ["Calculus", "AP Calculus AB", "AP Calculus BC"]
+    },
+    {
+      "canonical": "Statistics",
+      "category": "subject",
+      "aliases": ["stats", "statistics", "ap stats", "ap statistics"],
+      "services": ["Statistics", "AP Statistics"]
+    },
+    {
+      "canonical": "IB Math",
+      "category": "subject",
+      "aliases": ["ib math", "ib math sl", "ib math hl", "ib math studies", "ib maths", "ib mathematics"],
+      "services": ["IB Math SL 1", "IB Math SL 2", "IB Math Studies SL", "Pre HL Math"]
+    },
+    {
+      "canonical": "Biology",
+      "category": "subject",
+      "aliases": ["bio", "biology", "ap bio", "ap biology", "honors biology"],
+      "services": ["Biology", "AP Biology"]
+    },
+    {
+      "canonical": "Chemistry",
+      "category": "subject",
+      "aliases": ["chem", "chemistry", "ap chem", "ap chemistry", "ib chem", "ib chemistry", "honors chemistry"],
+      "services": ["Chemistry", "AP Chemistry", "IB Chem"]
+    },
+    {
+      "canonical": "Physics",
+      "category": "subject",
+      "aliases": ["physics", "ap physics", "ap physics c", "ib physics"],
+      "services": ["Physics", "AP Physics"]
+    },
+    {
+      "canonical": "Science (general)",
+      "category": "subject",
+      "aliases": ["science", "general science", "earth science"],
+      "services": ["Science"]
+    },
+    {
+      "canonical": "Environmental Science",
+      "category": "subject",
+      "aliases": ["environmental science", "apes", "ap environmental science", "ap enviro"],
+      "services": ["AP Environmental Science", "Environmental Science"]
+    },
+    {
+      "canonical": "US History",
+      "category": "subject",
+      "aliases": ["us history", "u.s. history", "apush", "ap us history", "american history"],
+      "services": ["US History", "AP History"]
+    },
+    {
+      "canonical": "World History",
+      "category": "subject",
+      "aliases": ["world history", "ap world history", "ap world", "ib history", "ap european history", "european history", "ap euro"],
+      "services": ["World History", "AP World History", "AP European History"]
+    },
+    {
+      "canonical": "Government / Civics",
+      "category": "subject",
+      "aliases": ["government", "gov", "civics", "american gov", "ap gov", "us government"],
+      "services": ["American Gov"]
+    },
+    {
+      "canonical": "Economics",
+      "category": "subject",
+      "aliases": ["economics", "econ", "ap econ", "microeconomics", "macroeconomics", "ap microeconomics"],
+      "services": ["AP Microeconomics"]
+    },
+    {
+      "canonical": "Psychology",
+      "category": "subject",
+      "aliases": ["psychology", "psych", "ap psych", "ap psychology"],
+      "services": ["AP Psychology"]
+    },
+    {
+      "canonical": "Philosophy",
+      "category": "subject",
+      "aliases": ["philosophy", "philo"],
+      "services": ["Philosophy"]
+    },
+    {
+      "canonical": "Spanish",
+      "category": "world-language",
+      "aliases": ["spanish", "ap spanish", "ib spanish"],
+      "services": ["Spanish", "IB Spanish"]
+    },
+    {
+      "canonical": "French",
+      "category": "world-language",
+      "aliases": ["french", "ap french", "ib french"],
+      "services": ["French"]
+    },
+    {
+      "canonical": "Japanese",
+      "category": "world-language",
+      "aliases": ["japanese", "ap japanese"],
+      "services": ["Japanese"]
+    },
+    {
+      "canonical": "Chinese / Mandarin",
+      "category": "world-language",
+      "aliases": ["chinese", "mandarin", "ap chinese"],
+      "services": ["AP Chinese"]
+    },
+    {
+      "canonical": "Computer Science",
+      "category": "subject",
+      "aliases": ["computer science", "cs", "coding", "programming", "ap computer science", "ap cs", "computers"],
+      "services": ["Computer Science", "AP Computer Science", "Computers"]
+    },
+    {
+      "canonical": "SAT Prep",
+      "category": "exam-prep",
+      "aliases": ["sat", "sat prep", "sat math", "sat verbal", "sat retest"],
+      "services": ["Exam Prep Math", "Exam Prep Verbal", "SAT Retest", "1.5 TIME SAT Retest"]
+    },
+    {
+      "canonical": "ACT Prep",
+      "category": "exam-prep",
+      "aliases": ["act", "act prep", "act english", "act math", "act science", "act reading", "act retest"],
+      "services": ["ACT English", "ACT Math/Science", "ACT Reading", "ACT Science", "ACT English/Reading", "ACT Retest", "1.5 TIME ACT Retest"]
+    },
+    {
+      "canonical": "ISEE Prep",
+      "category": "exam-prep",
+      "aliases": ["isee", "isee prep", "isee math", "isee verbal"],
+      "services": ["ISEE Math", "ISEE Verbal", "ISEE Retest"]
+    },
+    {
+      "canonical": "SSAT Prep",
+      "category": "exam-prep",
+      "aliases": ["ssat", "ssat prep", "ssat math", "ssat verbal"],
+      "services": ["SSAT Math", "SSAT Verbal", "SSAT Retest"]
+    },
+    {
+      "canonical": "College Essays",
+      "category": "college",
+      "aliases": ["college essay", "college essays", "personal statement", "application essay", "supplemental essays"],
+      "services": ["College Essays"]
+    },
+    {
+      "canonical": "College Counseling",
+      "category": "college",
+      "aliases": ["college counseling", "college counselling", "college planning", "college advising"],
+      "services": ["College Counselling"]
+    },
+    {
+      "canonical": "Subject Tutoring (generic)",
+      "category": "subject",
+      "aliases": ["subject tutoring", "tutoring", "st", "general tutoring", "homework help"],
+      "services": ["Subject Tutoring 1:1"]
+    }
+  ]
+}
