@@ -83,6 +83,7 @@ const ACTION_EMOJI = {
   MULTIPLE_OPTIONS:  ':grey_question:',
   CANCEL:            ':wastebasket:',
   OFFER_SLOTS:       ':calendar:',
+  PROGRAM_OFFER:     ':date:',
   BLOCKED:           ':warning:',
 };
 
@@ -161,7 +162,15 @@ function buildSlackText(rec, threadEntry) {
   lines.push('');
 
   // Recommendation — always a SINGLE proposed change, shaped by action.
-  if (action === 'CANCEL') {
+  if (action === 'PROGRAM_OFFER') {
+    const sch = rec.recommended.proposedSchedule || [];
+    if (sch.length) {
+      lines.push(`*Program* — ${rec.recommended.sessionsPerWeek}×/week with *${rec.recommended.tutor}*${rec.recommended.shortfall ? ` _(only ${sch.length} of ${rec.recommended.sessionsPerWeek} days open)_` : ''}:`);
+      sch.forEach(s => lines.push(`• ${s.day.slice(0, 3)} ${s.date} ${s.start}–${s.end}`));
+    } else {
+      lines.push(`*Program request* (${rec.recommended.sessionsPerWeek}×/week) — no open slots auto-found; staff to build manually.`);
+    }
+  } else if (action === 'CANCEL') {
     const sess = rec.recommended.sessions || [];
     lines.push(sess.length
       ? `*Cancel* ${sess.length} session(s): ${sess.map(s => `${s.start || '?'}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join(', ')} — no tutor selection needed.`

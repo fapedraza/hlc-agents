@@ -23,10 +23,19 @@ Arguments: `$ARGUMENTS`
 
 ## Stage 0 — Classify the conversation
 LLM reasoning over the conversation `thread[]` (from `text-request-read/messages.json`).
+
+> **Act on the LATEST unresolved request only.** These are long-lived per-family
+> threads. Ignore earlier asks that a staff reply already resolved — anchor on the
+> most recent customer message that still needs action. (This is the *Atlas* bug:
+> the bot resolved a schedule change from *May* instead of the current June ask.)
+> If the latest request has no concrete date/time, capture the range in
+> `timeWindow` and leave `proposedTime` empty rather than inventing a date.
+
 Decide:
-- **requestType:** `cancel` · `reschedule` · `makeup` · `new-session` · `info-only` · `not-scheduling` · `teacher-originated`
-- **subject:** the customer-facing subject in their own words (e.g. "IB English", "AP Stats"). The orchestrator auto-maps it to A+ service names via `subject-map.json` (`lib/subject-map.js`) — you don't pre-translate it. A semantic-leap mapping (e.g. "IB English" → Language Arts) auto-adds a confirm caveat to the post. For makeups/reschedules, fall back to the student's enrolled service.
-- **proposedDate / proposedTime / sessionLength:** as expressed in the thread.
+- **requestType:** `cancel` · `reschedule` · `makeup` · `new-session` · `program` · `info-only` · `not-scheduling` · `teacher-originated`
+- **subject:** the customer-facing subject **in a few words** (e.g. "IB English", "AP Stats", "math"). The orchestrator maps it to A+ service names via `subject-map.json`. **Never put a phrase/description or a date here** ("makeup for Monday's session") — the orchestrator now rejects a non-subject and falls back to the student's enrolled service, but a clean subject is better. For makeups/reschedules you can leave it as the student's subject.
+- **proposedDate / proposedTime / sessionLength:** as expressed in the thread. For a **program** request use `sessionsPerWeek` (int) + `timeWindow` instead of a single date/time.
+- **latestInboundDate** (optional, ISO): the date of the latest customer message. If it's >2 weeks old the orchestrator flags the rec as possibly stale.
 - **candidateTutors:** tutors named in the thread (e.g. "Tim"). **If none are named, leave it empty** — the orchestrator anchors on the student's real A+ session history (their actual tutors for this slot; see Stage 4 step 2.4) and only falls back to subject discovery for a brand-new student/subject. You don't need to supply the existing tutor for makeups/reschedules — history surfaces it.
 - **student:** for a multi-student contact (e.g. `"Zahera Shaik (Shaheer (JB) and Sarah Shaikh)"`), which child the request is about — a name or nickname (`"JB"`). Passed through to `resolve-student` to disambiguate.
 
@@ -59,9 +68,11 @@ Compose a `payload.json` for `demo-orchestrate.js`:
 ```
 - **`student`** (optional): disambiguates a multi-student contact (name or nickname).
 - **`candidateTutors`** empty **or** **`discover: true`** → the orchestrator discovers subject-qualified tutors from the quals index and live-verifies them (Stage 4). Named tutors are always evaluated first; discovery tops up the list. A **bare first name** ("Jennifer") is disambiguated against the *student's own history* (there are several Jennifers on staff) — see Stage 4.
-- **`requestType`** drives the action: `cancel` → `CANCEL` (no tutor logic); `reschedule`/`makeup` → keep the same tutor (carry-over); else the normal recommend flow.
+- **`requestType`** drives the action: `cancel` → `CANCEL` (no tutor logic); `reschedule`/`makeup` → keep the same tutor (carry-over); `program` → `PROGRAM_OFFER`; else the normal recommend flow.
 - **`fromDate`** (optional, reschedule): ISO date of the session being moved — its tutor (and the student's continuity) carries over to the new slot.
 - **`timeWindow`** (optional): `{ "start": "11:00", "end": "15:00" }` (24h) when the family gives a *range* instead of an exact time. With no `proposedTime`, the orchestrator returns `OFFER_SLOTS` (open times) instead of checking one slot.
+- **`sessionsPerWeek`** (int, program): triggers `PROGRAM_OFFER` — a proposed recurring weekly schedule (N open slots across distinct days) with the anchored tutor. Pair with `timeWindow` and optional `weekStart` (ISO Monday; defaults to next week).
+- **`latestInboundDate`** (optional, ISO): age-checked to flag stale requests.
 
 ## Stage 4 — Live A+ lookups + recommendation
 ```bash
@@ -86,6 +97,7 @@ What it does (in order):
    - `PROCEED` — one tutor passes qualification + working-hours + conflict checks. For a reschedule this is the **same tutor** as the moved session (carry-over), not a re-rank by the new slot.
    - `CANCEL` — `requestType: cancel`: lists the student's existing session(s) on the date to remove. No tutor reasoning.
    - `OFFER_SLOTS` — the family gave a time *range*/no exact time, or the requested slot is taken: proposes the (correct) tutor's open times that day (`suggestedSlots: [{start,end,label}]`) for staff to offer — mirroring what staff do in ~56% of threads (`lib/slots.js`).
+   - `PROGRAM_OFFER` — a program request (`sessionsPerWeek ≥ 2`): a proposed **recurring weekly schedule** (`proposedSchedule: [{date,day,start,end,label}]`) with the anchored tutor, honoring the student's historical day/time where open. For staff to confirm — not a single session.
    - `MULTIPLE_OPTIONS` — back-compat only; the orchestrator now picks one.
    - `BLOCKED` — no tutor passes and no slots to offer; the `reason` field gives the failing check.
 

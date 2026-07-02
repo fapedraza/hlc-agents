@@ -197,6 +197,66 @@ function unionWindow(template, observed) {
   };
 }
 
+/** The tutor's non-cancelled booked intervals on a specific ISO date. */
+function bookedIntervalsOnDate(bookingRows, tutorLastFirst, isoDate) {
+  const { matches } = tutorBookingsOnDate(bookingRows, tutorLastFirst, isoDate);
+  return (matches || [])
+    .filter(b => !CANCEL_STATUSES.has((b['Session Status'] || '').toLowerCase().trim()))
+    .map(b => {
+      const start = toHHMM24((b['Start Time'] || '').trim());
+      const dur = durationToMinutes((b['Duration'] || '').trim()) || 60;
+      return { start, end: addMinutes(start, dur) };
+    })
+    .filter(iv => iv.start);
+}
+
+function isoAddDays(iso, n) {
+  const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+/** ISO date of the Monday on/after `now` (start of the next full week). */
+function nextMondayISO(now) {
+  const d = new Date(now); d.setHours(12, 0, 0, 0);
+  const add = ((8 - d.getDay()) % 7) || 7;   // 1..7 days to the coming Monday
+  d.setDate(d.getDate() + add);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * #3 Program scheduling — propose a recurring weekly schedule instead of one
+ * session. For the target week, walk Mon→Sat and pick `sessionsPerWeek` open
+ * slots on DISTINCT days for the anchored tutor, honoring the student's historical
+ * day/time with that tutor when it's free, else the earliest open slot in the
+ * window. Availability uses the effective window (template ∪ real bookings).
+ * Returns { slots:[{date,day,start,end,label}], shortfall }.
+ */
+function buildProgramProposal({ weeklySchedule, tutorLastFirst, bookingRows, weekStartISO, sessionsPerWeek, timeWindow, durationMin, historyTutor }) {
+  const prefByDay = {};
+  if (historyTutor && historyTutor.slots) {
+    for (const k of historyTutor.slots) { const [day, hhmm] = k.split(' '); if (day && !prefByDay[day]) prefByDay[day] = hhmm; }
+  }
+  const slots = [];
+  const usedDays = new Set();
+  for (let i = 0; i < 6 && slots.length < sessionsPerWeek; i++) {   // Mon..Sat
+    const date = isoAddDays(weekStartISO, i);
+    const day = DAYS[new Date(date + 'T12:00:00').getDay()];
+    if (usedDays.has(day)) continue;
+    const eff = unionWindow(weeklySchedule ? weeklySchedule[day] : null,
+      observedWindow(tutorWeekdayIntervals(bookingRows, tutorLastFirst, day)));
+    if (eff.off) continue;
+    const open = computeOpenSlots({
+      dayHours: eff, busyIntervals: bookedIntervalsOnDate(bookingRows, tutorLastFirst, date),
+      durationMin, window: timeWindow || null, max: 8,
+    });
+    if (!open.length) continue;
+    const pref = prefByDay[day];
+    const chosen = (pref && open.find(s => s.start === pref)) || open[0];
+    slots.push({ date, day, start: chosen.start, end: chosen.end, label: `${day.slice(0, 3)} ${date} ${chosen.label}` });
+    usedDays.add(day);
+  }
+  return { slots, shortfall: Math.max(0, sessionsPerWeek - slots.length) };
+}
+
 /** Does this tutor have ANY booking with the resolved student (any date) in the CSV? */
 function tutorHasStudent(csvRows, tutorLastFirst, rosterRow) {
   if (!rosterRow) return false;
@@ -222,6 +282,31 @@ function studentFirstName(rosterRow) {
   return rosterRow?.firstname || rosterRow?.firstName || 'your student';
 }
 
+// ─── subject sanity (#1 — Atlas "garbled subject" bug) ────────────────────────
+// The classifier sometimes jams a whole phrase into `subject` ("makeup for Monday
+// July 27th session (tutor unavailable)"), which then fails subject-mapping and
+// pollutes the reply draft. Detect a non-subject and fall back to the student's
+// enrolled service so qualification (already history-anchored) and the reply stay clean.
+const SERVICE_LABELS = { ST: 'Subject Tutoring', S1: 'Subject Tutoring', L1: 'Learning Center', LS: 'Learning Center', A1: 'test prep' };
+const SUBJECT_STOPWORDS = /\b(session|sessions|makeup|make[- ]?up|reschedul|cancel|schedule|unavailable|tutor|appointment|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(st|nd|rd|th)?)\b/i;
+
+/** True if `s` reads like an actual subject (short, no scheduling/date words). */
+function looksLikeSubject(s) {
+  if (!s) return false;
+  const t = s.trim();
+  if (t.split(/\s+/).length > 4) return false;       // subjects are short ("AP Stats", "SAT prep")
+  if (/\d{1,2}\/\d{1,2}/.test(t)) return false;       // contains a date
+  if (SUBJECT_STOPWORDS.test(t)) return false;        // contains scheduling/date words
+  return true;
+}
+
+/** The subject to USE: the customer's if it's plausible, else the student's service label. */
+function effectiveSubject(payload, rosterRow) {
+  if (looksLikeSubject(payload.subject)) return { subject: payload.subject, fellBack: false };
+  const svc = (rosterRow?.service || '').toUpperCase();
+  return { subject: SERVICE_LABELS[svc] || 'tutoring', fellBack: true };
+}
+
 function fmtDay(iso) {
   const d = new Date(iso + 'T12:00:00');
   return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
@@ -239,8 +324,23 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
   const dayName = payload.proposedDate ? fmtDay(payload.proposedDate) : '';
   const dateNice = payload.proposedDate ? `${dayName} ${payload.proposedDate}` : '';
   const timeNice = payload.proposedTime || '';
-  const subject = payload.subject || 'their session';
+  const subject = effectiveSubject(payload, rosterRow).subject;   // #1: never echo a garbled subject
 
+  if (recommended.action === 'PROGRAM_OFFER') {
+    // #3 Program: propose the full weekly schedule for staff to confirm.
+    const sch = recommended.proposedSchedule || [];
+    const nice = sch.map(s => `${s.day.slice(0, 3)} ${fmt12(s.start)}`).join(', ');
+    return {
+      lcos: sch.length
+        ? `Build a recurring ${recommended.sessionsPerWeek}×/week program for ${student} with ${tutorShort} (week of ${recommended.weekStart}): ${sch.map(s => `${s.date} ${s.start}–${s.end}`).join('; ')}.`
+        : `Program request — no open slots auto-found; build the schedule manually.`,
+      aplus: sch.length ? `Book the recurring sessions with ${tutorShort}: ${sch.map(s => `${s.date} ${s.start}`).join('; ')}.` : 'Hold — build manually.',
+      payment: 'Confirm program tuition / hours before booking.',
+      textReplyDraft: sch.length
+        ? `Hi! For ${student}'s ${recommended.sessionsPerWeek}×/week schedule with ${tutorShort}, here's what we have open: ${nice}. Do these work? - HLC Issaquah`
+        : `Hi! Let me put together a few schedule options for ${student} and follow up shortly. - HLC Issaquah`,
+    };
+  }
   if (recommended.action === 'CANCEL') {
     // #1 Cancel: no tutor reasoning; enumerate the existing session(s) to remove.
     const sess = recommended.sessions || [];
@@ -416,13 +516,21 @@ async function orchestrateOne({
     return { skipped: 'teacher-contact', resolution };
   }
 
-  // Step 1.4: map the customer subject to canonical A+ service terms. Drives
-  // both qualification and discovery, and yields a confirm-note when the
-  // mapping is a semantic leap (e.g. "IB English" → Language Arts).
-  const subjectResolved = resolveSubject(payload.subject);
+  // Step 1.4: sanity-check the subject (#1 — Atlas "garbled subject" bug), then
+  // map it to canonical A+ service terms. A non-subject (a whole phrase/date jammed
+  // in by the classifier) falls back to the student's enrolled service and adds a
+  // clear confirm-note instead of a misleading "no mapping" warning.
+  const effSubj = effectiveSubject(payload, resolution.bestMatch);
+  const subjectForMap = effSubj.subject;
+  const subjectResolved = resolveSubject(subjectForMap);
   const subjectTerms = subjectResolved.services;
-  if (subjectResolved.mapped) {
-    log(`    [subject] "${payload.subject}" → [${subjectTerms.join(', ')}]${subjectResolved.ambiguous ? ' (ambiguous — note added)' : ''}`);
+  const subjectNote = effSubj.fellBack
+    ? `Couldn't parse a subject from the request ("${(payload.subject || '').slice(0, 60)}") — used the student's usual service (${subjectForMap}); confirm.`
+    : subjectResolved.note;
+  if (effSubj.fellBack) {
+    log(`    [subject] garbled input "${(payload.subject || '').slice(0, 40)}" → fallback service "${subjectForMap}"`);
+  } else if (subjectResolved.mapped) {
+    log(`    [subject] "${subjectForMap}" → [${subjectTerms.join(', ')}]${subjectResolved.ambiguous ? ' (ambiguous — note added)' : ''}`);
   }
 
   // Step 1.45: anchor on the student's REAL A+ session history (Mariah's fix).
@@ -565,7 +673,7 @@ async function orchestrateOne({
     }
     log(`    - ${teacher.lastFirst} (eid ${teacher.eid}): quals + schedule${fromCache ? ' [cached]' : ''}`);
 
-    const bookings = bookingAvailable
+    const bookings = (bookingAvailable && payload.proposedDate)   // no single date for a program request
       ? tutorBookingsOnDate(bookingRows, teacher.lastFirst, payload.proposedDate)
       : { matches: [], csvTeacher: null };
     // #4 real availability: the tutor's actual working span on this weekday,
@@ -588,6 +696,7 @@ async function orchestrateOne({
       isStudentsTutor: !!histEntry || (bookingAvailable ? tutorHasStudent(bookingRows, teacher.lastFirst, resolution.bestMatch) : false),
       teacher: { eid: teacher.eid, lastFirst: teacher.lastFirst, displayName: teacher.displayName },
       eval: ev,
+      weeklySchedule: schedule,          // #3: needed to propose a full-week program
       servicesOfferedCount: quals.filter(q => q.offered).length,
     });
     log(`       qualified: ${ev.qualified ? 'YES (' + ev.qualMatches.map(q => q.name).join(', ') + ')' : (histEntry ? 'via history (active tutor for this student)' : 'no')}`);
@@ -603,9 +712,10 @@ async function orchestrateOne({
   // the original single PROCEED/ALREADY_BOOKED/BLOCKED path so its ground-truth
   // comparison remains comparable; the new branches are live-only.
   const reqType = (payload.requestType || '').toLowerCase();
-  const isCancel = !backtest && reqType === 'cancel';
-  const isReschedule = !backtest && (reqType === 'reschedule' || reqType === 'makeup');
-  const noExactTime = !backtest && !payload.proposedTime;
+  const isProgram = !backtest && (reqType === 'program' || reqType === 'new-program' || Number(payload.sessionsPerWeek) >= 2);
+  const isCancel = !backtest && !isProgram && reqType === 'cancel';
+  const isReschedule = !backtest && !isProgram && (reqType === 'reschedule' || reqType === 'makeup');
+  const noExactTime = !backtest && !isProgram && !payload.proposedTime;
 
   const CANCELLED = new Set(['cancelled','canceled','no-show','no show','noshow','deleted','removed','void','anm','anm - paid','anm - unpaid','absent no makeup']);
   // The student's non-cancelled sessions on an ISO date, across ALL tutors —
@@ -656,7 +766,36 @@ async function orchestrateOne({
     (t.servicesOfferedCount || 0) * 0.1;
 
   let recommended;
-  if (isCancel) {
+  if (isProgram) {
+    // #3 Program request ("3 sessions per week"): propose a recurring WEEKLY
+    // schedule with the anchored tutor, not a single session (Mariah: Abhi
+    // "needs a complete schedule, not just an individual session").
+    const perWeek = Math.max(2, Number(payload.sessionsPerWeek) || 2);
+    const anchorName = named[0] || history.primaryTutor
+      || [...usable].sort((a, b) => rankUsable(b) - rankUsable(a))[0]?.teacher.lastFirst;
+    const tEval = evalFor(anchorName) || tutorEvals.find(t => t.found && t.weeklySchedule);
+    const weekStart = payload.weekStart
+      || (payload.proposedDate ? isoAddDays(payload.proposedDate, -((new Date(payload.proposedDate + 'T12:00:00').getDay() + 6) % 7)) : nextMondayISO(now));
+    const durationMin = durationToMinutes(payload.sessionLength) || (tEval && tEval.eval && tEval.eval.durationMin) || 60;
+    const histTutor = (tEval && history.tutors) ? history.tutors.find(t => sameTutor(t.tutor, tEval.teacher.lastFirst)) : null;
+    const prop = tEval ? buildProgramProposal({
+      weeklySchedule: tEval.weeklySchedule, tutorLastFirst: tEval.teacher.lastFirst,
+      bookingRows, weekStartISO: weekStart, sessionsPerWeek: perWeek,
+      timeWindow: payload.timeWindow || null, durationMin, historyTutor: histTutor,
+    }) : { slots: [], shortfall: perWeek };
+    log(`    [program] ${perWeek}×/week with ${tEval ? tEval.teacher.lastFirst : (anchorName || '?')}, week of ${weekStart}: ${prop.slots.length} slot(s)`);
+    recommended = {
+      action: 'PROGRAM_OFFER',
+      tutor: tEval ? tEval.teacher.lastFirst : null,
+      sessionsPerWeek: perWeek,
+      weekStart,
+      proposedSchedule: prop.slots,
+      shortfall: prop.shortfall,
+      reason: prop.slots.length
+        ? `Program: ${prop.slots.length}${prop.shortfall ? ` of ${perWeek} (only ${prop.slots.length} open day(s) found in the window)` : ''} weekly session(s) with ${tEval ? shortTutorName(tEval.teacher.lastFirst) : '?'} — ${prop.slots.map(s => s.label).join('; ')}.`
+        : `Program request (${perWeek}×/week) but no open slots found${payload.timeWindow ? ' in the requested window' : ''} — staff to build the schedule manually.`,
+    };
+  } else if (isCancel) {
     // #1 Cancel: no tutor reasoning — just identify the session(s) to cancel.
     const sessions = studentSessionsOn(payload.proposedDate);
     recommended = {
@@ -781,11 +920,28 @@ async function orchestrateOne({
     };
   }
 
+  // #1 stale-thread / past-date guard — flag likely-stale requests (the Atlas
+  // "acting on a May message" case) so staff don't trust a confidently-wrong rec.
+  const staleBits = [];
+  const todayMid = new Date(now); todayMid.setHours(0, 0, 0, 0);
+  if (payload.proposedDate) {
+    const pd = new Date(payload.proposedDate + 'T12:00:00');
+    if (!isNaN(pd) && pd < todayMid) staleBits.push(`⚠️ proposed date ${payload.proposedDate} is in the PAST — likely acting on an old message; re-check the thread.`);
+  }
+  if (payload.latestInboundDate) {
+    const li = new Date(payload.latestInboundDate + 'T12:00:00');
+    if (!isNaN(li)) {
+      const days = Math.floor((todayMid - li) / 86400000);
+      if (days >= 14) staleBits.push(`⚠️ latest customer text is ~${days} days old — verify this is a current request.`);
+    }
+  }
+  const staleNote = staleBits.join(' ') || null;
+
   const recommendation = {
     contactName: payload.contactName,
     requestType: payload.requestType,
     mode: backtest ? 'backtest' : 'live',
-    note: [payload.note || subjectResolved.note, ...tutorNote].filter(Boolean).join(' ') || null,   // explicit/subject caveat + any tutor-disambiguation flag
+    note: [payload.note || subjectNote, ...tutorNote, staleNote].filter(Boolean).join(' ') || null,   // explicit/subject caveat + tutor-disambiguation + stale-thread flag
     student: resolution.bestMatch && {
       clientid: resolution.bestMatch.clientid,
       name: `${resolution.bestMatch.firstname} ${resolution.bestMatch.lastname}`,
@@ -795,7 +951,8 @@ async function orchestrateOne({
     proposed: {
       date: payload.proposedDate,
       time: payload.proposedTime,
-      subject: payload.subject,
+      subject: subjectForMap,          // #1: clean/effective subject, never the garbled raw input
+      rawSubject: looksLikeSubject(payload.subject) ? undefined : payload.subject,
       sessionLength: payload.sessionLength,
     },
     candidateSource,
