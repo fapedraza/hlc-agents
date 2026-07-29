@@ -86,3 +86,8 @@ seed-teacher-categories.json
 
 # -- outcome analysis output (student names + staff reply text) --
 backfill-report.json
+
+# -- availability snapshots + stale-template output (staff + student names) --
+.template-snapshot.json
+.cache-availability.json
+.stale-templates-slack.txt

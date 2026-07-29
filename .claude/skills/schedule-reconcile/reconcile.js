@@ -329,10 +329,54 @@ for (const key of Object.keys(retestByKey)) {
   }
 }
 
+// Tutor overload: more than MAX_CONCURRENT students booked against one tutor in
+// the same 30-minute window (requested by Mariah 2026-07-27). Her example: Jen
+// A. W. would have had 5 students 3:00-3:30 if Miller Morissette had not been
+// moved off her.
+//
+// NOTE: she framed this as "floor students", but the A+ Schedule Report has no
+// service column, so this counts CONCURRENT STUDENTS regardless of service.
+// Arguably the better measure - 4 floor students plus a 1:1 is still five people
+// needing one tutor. Retests are already routed out of aplusSessions above.
+const MAX_CONCURRENT = 4;
+const OVERLOAD_BUCKET = 30;
+const byStaffDay = {};
+for (const s of aplusSessions) {
+  if (!s.isActive || !s.staff || !s.startTime || !s.endTime) continue;
+  if (!dateSet.has(s.date)) continue;   // respect the report's date range
+  (byStaffDay[`${s.staff}|${s.date}`] = byStaffDay[`${s.staff}|${s.date}`] || []).push(s);
+}
+for (const [key, sess] of Object.entries(byStaffDay)) {
+  const [staff, date] = key.split('|');
+  const lo = Math.min(...sess.map(s => timeToMins(s.startTime)));
+  const hi = Math.max(...sess.map(s => timeToMins(s.endTime)));
+  let cur = null;
+  const windows = [];
+  for (let t = Math.floor(lo / OVERLOAD_BUCKET) * OVERLOAD_BUCKET; t < hi; t += OVERLOAD_BUCKET) {
+    const here = sess.filter(s => timeToMins(s.startTime) < t + OVERLOAD_BUCKET && timeToMins(s.endTime) > t);
+    const students = [...new Set(here.map(s => s.studentName))];
+    if (students.length > MAX_CONCURRENT) {
+      if (cur && cur.end === t) { cur.end = t + OVERLOAD_BUCKET; students.forEach(x => cur.students.add(x)); cur.peak = Math.max(cur.peak, students.length); }
+      else { if (cur) windows.push(cur); cur = { start: t, end: t + OVERLOAD_BUCKET, students: new Set(students), peak: students.length }; }
+    }
+  }
+  if (cur) windows.push(cur);
+  for (const w of windows) {
+    discrepancies.push({
+      type: 'Tutor Overloaded',
+      student: staff,                       // the row's subject is the TUTOR here
+      date,
+      lcos_detail: `${w.peak} students at once (max ${MAX_CONCURRENT})`,
+      aplus_detail: `${minsToTime(w.start)}-${minsToTime(w.end)}: ${[...w.students].join(', ')}`,
+      lcos_mins: 0, aplus_mins: 0
+    });
+  }
+}
+
 const typePriority = {
   'Missing in A+': 1, 'Missing in LCOS': 2,
   'Not Cancelled in A+': 3, 'Not Cancelled in LCOS': 4,
-  'Schedule Mismatch': 5, 'Double Booked': 6, 'Session/Retest Overlap': 7
+  'Schedule Mismatch': 5, 'Double Booked': 6, 'Session/Retest Overlap': 7, 'Tutor Overloaded': 8
 };
 discrepancies.sort((a,b) =>
   a.date.localeCompare(b.date) ||
