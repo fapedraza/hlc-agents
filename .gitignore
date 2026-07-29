@@ -75,3 +75,11 @@ payload*.json
 *_blocks*.json
 *_part*.json
 test_*.json
+
+# -- derived seed data (student names + clientids) --
+# Produced by seed-tutor-rules.js. The SCRIPT is tracked; its OUTPUT is not.
+seed-student-tutors.json
+seed-teacher-categories.json
+
+# -- local backups of data files --
+*.bak-*
