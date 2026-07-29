@@ -83,3 +83,6 @@ seed-teacher-categories.json
 
 # -- local backups of data files --
 *.bak-*
+
+# -- outcome analysis output (student names + staff reply text) --
+backfill-report.json

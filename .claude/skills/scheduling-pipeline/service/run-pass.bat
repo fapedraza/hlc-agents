@@ -18,4 +18,14 @@ C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionP
 
 echo ===== %date% %time% pass start ===== >> "%LOGFILE%"
 claude -p "Execute exactly ONE pass of the scheduling pipeline, following the skill at .claude/skills/scheduling-pipeline/SKILL.md, then STOP. Do not loop. Step 1: run  node .claude/skills/scheduling-pipeline/pipeline-run.js pending  to fetch new Text Request threads. Step 2: for EACH thread listed by pending, classify it from the thread text only. If a thread shows inQueue false or has no messages, run pipeline-run.js skip with reason no-longer-in-queue. If it is a schedulable request, write a payload JSON file under .claude/skills/scheduling-pipeline/payloads/ named by the thread hash and run  node .claude/skills/scheduling-pipeline/pipeline-run.js process  on that file. Use the customer's own words for the subject and prefer the student's current tutor. If it is NOT schedulable, run  node .claude/skills/scheduling-pipeline/pipeline-run.js skip  with the hash and a short reason. You MUST actually run the process or skip command for EACH thread - do not just describe it. After handling all threads, run  node .claude/skills/scheduling-pipeline/pipeline-run.js status  and confirm zero records remain at status new; if any remain, go back and process or skip each one until none are new. Do NOT call any LCOS, Appointment-Plus, or Slack tools directly - the node scripts handle all of that. Step 3: run  node .claude/skills/scheduling-pipeline/poll-decisions.js  to record any staff decisions. Finish with a one-line summary." --settings "%SETTINGS%" < NUL >> "%LOGFILE%" 2>&1
+REM Close the loop on past recommendations. Staff answer the FAMILY in Text
+REM Request, not the bot in Slack -- only 4 of 38 recommendations ever got a
+REM vote. This reads the staff reply + the resulting A+ booking and records what
+REM actually happened, then posts one threaded reply so a wrong reading can be
+REM corrected. Records an OUTCOME, never a DECISION: inferred evidence must not
+REM be mistaken for a human approving anything.
+REM --min-age-hours 24 lets the outcome settle; already-settled records are
+REM skipped before any API call, so this is cheap at a 15-minute cadence.
+node .claude\skills\scheduling-pipeline\backfill-outcomes.js --apply --min-age-hours 24 >> "%LOGFILE%" 2>&1
+
 echo ===== %date% %time% pass exit %ERRORLEVEL% ===== >> "%LOGFILE%"
