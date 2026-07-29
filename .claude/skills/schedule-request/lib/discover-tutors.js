@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { serviceMatchesAny } = require('./subject-map');
+const { isNonTutor } = require('./non-tutors');
 
 const QUALS_PATH = path.join(__dirname, '..', 'aplus-quals.json');
 
@@ -44,6 +45,12 @@ function findQualifiedTutors(terms, qualsIndex, { max = 8 } = {}) {
   const termSet = new Set(termList.map(t => (t || '').toLowerCase().trim()));
   const out = [];
   for (const t of qualsIndex.teachers) {
+    // Admin/placeholder entries carry real service qualifications in A+ (e.g.
+    // "McRetest Retest" is qualified for the retest services), so without this
+    // guard discovery happily recommends them — that is how the 2026-07-03
+    // practice-SSAT request got "book with McRetest, Retest (RETEST)".
+    // The history/named paths already filter; discovery was the hole.
+    if (isNonTutor(t.lastFirst || t.displayName)) continue;
     const offered = (t.services || []).filter(s => s.offered);
     const matches = offered.filter(s => serviceMatchesAny(s.name, termList));
     if (!matches.length) continue;

@@ -300,11 +300,34 @@ function looksLikeSubject(s) {
   return true;
 }
 
-/** The subject to USE: the customer's if it's plausible, else the student's service label. */
+// Request types that act on a session the student ALREADY has. For these the
+// subject is whatever the student already does — there is nothing to parse and
+// nothing for staff to confirm, because the tutor carries over from the existing
+// session (see the reschedule carry-over in orchestrateOne). Warning on these
+// produced a "Couldn't parse a subject" line on most posts, which trained staff
+// to ignore the warning entirely.
+const CONTINUATION_TYPES = new Set(['makeup', 'reschedule', 'cancel']);
+
+/**
+ * The subject to USE: the customer's if it's plausible, else the student's
+ * service label.
+ *
+ * Returns `{ subject, fellBack, inherited }`:
+ *   - `fellBack: true`  — we needed a real subject and could not get one. The
+ *     label is a guess, so it must NOT be used to hard-block a tutor (see
+ *     `subjectUnreliable` in orchestrateOne) and staff get a confirm note.
+ *   - `inherited: true` — a continuation request; the service label is the
+ *     right answer, not a fallback. No note, no blocking.
+ */
 function effectiveSubject(payload, rosterRow) {
-  if (looksLikeSubject(payload.subject)) return { subject: payload.subject, fellBack: false };
   const svc = (rosterRow?.service || '').toUpperCase();
-  return { subject: SERVICE_LABELS[svc] || 'tutoring', fellBack: true };
+  const serviceLabel = SERVICE_LABELS[svc] || 'tutoring';
+  const plausible = looksLikeSubject(payload.subject);
+  const isContinuation = CONTINUATION_TYPES.has((payload.requestType || '').toLowerCase());
+
+  if (plausible) return { subject: payload.subject, fellBack: false, inherited: false };
+  if (isContinuation) return { subject: serviceLabel, fellBack: false, inherited: true };
+  return { subject: serviceLabel, fellBack: true, inherited: false };
 }
 
 function fmtDay(iso) {
@@ -524,11 +547,23 @@ async function orchestrateOne({
   const subjectForMap = effSubj.subject;
   const subjectResolved = resolveSubject(subjectForMap);
   const subjectTerms = subjectResolved.services;
-  const subjectNote = effSubj.fellBack
-    ? `Couldn't parse a subject from the request ("${(payload.subject || '').slice(0, 60)}") — used the student's usual service (${subjectForMap}); confirm.`
-    : subjectResolved.note;
+  // A continuation (makeup/reschedule/cancel) needs no subject at all, so neither
+  // the fallback warning NOR resolveSubject's "no mapping for <service label>"
+  // note is useful — both are noise on a post whose tutor carries over anyway.
+  const subjectNote = effSubj.inherited
+    ? null
+    : effSubj.fellBack
+      ? `Couldn't parse a subject from the request ("${(payload.subject || '').slice(0, 60)}") — used the student's usual service (${subjectForMap}); tutor chosen from this student's history, so confirm the subject only if it matters.`
+      : subjectResolved.note;
+  // When the subject is a guess, a qualification MISS proves nothing — the tutor
+  // was checked against a label the customer never said. Blocking on it produced
+  // false "not qualified" BLOCKs (2026-07-15 Charlie Hirschberg: Connie was named
+  // in the thread and blocked as unqualified for "1 to 1.5 hour tutoring sessions").
+  const subjectUnreliable = effSubj.fellBack;
   if (effSubj.fellBack) {
-    log(`    [subject] garbled input "${(payload.subject || '').slice(0, 40)}" → fallback service "${subjectForMap}"`);
+    log(`    [subject] garbled input "${(payload.subject || '').slice(0, 40)}" → fallback service "${subjectForMap}" (qualification check downgraded to advisory)`);
+  } else if (effSubj.inherited) {
+    log(`    [subject] ${payload.requestType} of an existing session → inherited service "${subjectForMap}" (no subject needed)`);
   } else if (subjectResolved.mapped) {
     log(`    [subject] "${subjectForMap}" → [${subjectTerms.join(', ')}]${subjectResolved.ambiguous ? ' (ambiguous — note added)' : ''}`);
   }
@@ -744,8 +779,12 @@ async function orchestrateOne({
   }
 
   // A history tutor is qualification-proven by the fact they teach this student.
+  // And when the subject itself is a guess (`subjectUnreliable`), a qualification
+  // miss is not evidence of anything — treat the check as advisory rather than
+  // disqualifying, and surface it as a note instead.
+  const qualOk = t => t.eval.qualified || t.fromHistory || subjectUnreliable;
   const usable = tutorEvals.filter(t => t.found && t.eval &&
-    (t.eval.qualified || t.fromHistory) && t.eval.inWorkingHours && t.eval.conflicts.length === 0);
+    qualOk(t) && t.eval.inWorkingHours && t.eval.conflicts.length === 0);
 
   // #1 Reschedule/makeup: tutor carries over from the EXISTING session rather
   // than being re-ranked by the new slot (which drifted Lydia's reschedule to
@@ -860,7 +899,7 @@ async function orchestrateOne({
         };
       } else {
         const evaluated = tutorEvals.filter(t => t.found && t.eval);
-        const qualified = evaluated.filter(t => t.eval.qualified || t.fromHistory);
+        const qualified = evaluated.filter(qualOk);
         const qualAvail = qualified.filter(t => t.eval.inWorkingHours);
         // #2 Before BLOCKING, try offering the best candidate's open slots that
         // day — the requested time may be taken but others are free.
@@ -877,7 +916,10 @@ async function orchestrateOne({
               ? `no tutor qualified for "${payload.subject}" found in the quals index (index may be stale/incomplete — refresh fetch-aplus-quals.js, or name a tutor)`
               : 'no candidate evaluated';
           } else if (qualified.length === 0) {
-            why = `none of the ${evaluated.length} evaluated tutor(s) are qualified for "${payload.subject}" (checked: ${names(evaluated)})`;
+            // Quote the subject we actually checked against, not the raw thread
+            // text — "not qualified for '1 to 1.5 hour tutoring sessions'" reads
+            // like a bug to staff, because it is one.
+            why = `none of the ${evaluated.length} evaluated tutor(s) are qualified for "${subjectForMap}" (checked: ${names(evaluated)})`;
           } else if (qualAvail.length === 0) {
             why = `qualified tutor(s) [${names(qualified)}] are not available ${payload.proposedTime} on ${qualified[0].eval.dayName}`;
           } else {
@@ -982,4 +1024,5 @@ module.exports = {
   APLUS_CSV_PATH,
   // helpers exported for tests / reuse
   toHHMM24, durationToMinutes, addMinutes, dayNameForISO,
+  effectiveSubject, looksLikeSubject,
 };

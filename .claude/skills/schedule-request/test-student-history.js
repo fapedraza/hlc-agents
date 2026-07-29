@@ -13,6 +13,8 @@
 const assert = require('assert');
 const { summarizeStudentHistory, buildHistoryCandidates } = require('./lib/student-history');
 const { isNonTutor } = require('./lib/non-tutors');
+const { findQualifiedTutors } = require('./lib/discover-tutors');
+const { effectiveSubject } = require('./lib/orchestrate');
 
 const NOW = new Date('2026-06-26T12:00:00');   // fixed "today" for reproducibility
 
@@ -25,6 +27,7 @@ const rows = [
   row('Sathvik Movva', 'Lanham Sierra',   '6/9/2026',  '6:30pm',  '1 hour', 'Cancelled'),  // ignored
   row('Sathvik Movva', 'Erickson Lucas',  '3/21/2026', '6:30pm',  '1 hour', 'ATD'),        // stale
   row('Sathvik Movva', 'Head Teacher',    '6/1/2026',  '9:00am',  '1 hour', 'ATD'),        // admin placeholder
+  row('Sathvik Movva', 'McRetest Retest', '6/2/2026',  '9:00am',  '5 hours','ATD'),        // proctoring placeholder
   // A different student / different tutor — must never leak into Sathvik's pool.
   row('Other Kid',     'Smith Elizabeth', '6/1/2026',  '3:00pm',  '1 hour', 'ATD'),
 ];
@@ -77,6 +80,51 @@ check('non-tutor helper matches placeholder forms', () => {
   assert.equal(isNonTutor('Head Teacher'), true);
   assert.equal(isNonTutor('Head Teacher (admin hours)'), true);
   assert.equal(isNonTutor('Key Ashley'), false);
+});
+
+// ── regression: the proctoring placeholder must never be recommendable ──
+// A+ carries "McRetest Retest" as a staff row with real service quals, and it
+// has 253 sessions in the history report. On 2026-07-03 it was recommended as a
+// tutor for a practice SSAT.
+check('excludes "McRetest Retest" proctoring placeholder', () => {
+  assert.equal(isNonTutor('McRetest Retest'), true);
+  assert.equal(isNonTutor('McRetest, Retest (RETEST)'), true);
+  assert.ok(!sum.tutors.some(t => /retest/i.test(t.tutor)), 'RETEST leaked into history pool');
+});
+
+check('subject discovery filters non-tutors (the actual 7/03 leak path)', () => {
+  const idx = { extractedAt: null, teachers: [
+    { lastFirst: 'McRetest Retest', eid: '1', services: [{ name: 'Practice SSAT', offered: true }] },
+    { lastFirst: 'Head Teacher',    eid: '2', services: [{ name: 'Practice SSAT', offered: true }] },
+    { lastFirst: 'Wiley Tyler',     eid: '3', services: [{ name: 'Practice SSAT', offered: true }] },
+  ] };
+  const hits = findQualifiedTutors(['Practice SSAT'], idx, { max: 8 });
+  assert.deepEqual(hits.map(h => h.tutor), ['Wiley Tyler'],
+    'discovery returned a placeholder: ' + hits.map(h => h.tutor).join(', '));
+});
+
+// ── regression: subject handling (C4) ──
+const RR = { service: 'L1' };
+check('continuation requests inherit the service, no fallback warning', () => {
+  for (const t of ['makeup', 'reschedule', 'cancel']) {
+    const r = effectiveSubject({ requestType: t, subject: "make up today's missed session next Friday" }, RR);
+    assert.equal(r.inherited, true, t + ' should inherit');
+    assert.equal(r.fellBack, false, t + ' should not be flagged as a failed parse');
+    assert.equal(r.subject, 'Learning Center');
+  }
+});
+
+check('new-session with an unparseable subject still flags fallback', () => {
+  const r = effectiveSubject({ requestType: 'new-session', subject: '1 to 1.5 hour tutoring sessions' }, RR);
+  assert.equal(r.fellBack, true, 'new-session must still warn — the subject genuinely matters');
+  assert.equal(r.inherited, false);
+});
+
+check('a real subject is kept regardless of request type', () => {
+  const r = effectiveSubject({ requestType: 'reschedule', subject: 'AP Stats' }, RR);
+  assert.equal(r.subject, 'AP Stats');
+  assert.equal(r.inherited, false);
+  assert.equal(r.fellBack, false);
 });
 
 console.log(failures ? `\n${failures} FAILED` : '\nAll passed');
