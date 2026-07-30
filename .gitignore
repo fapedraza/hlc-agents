@@ -91,3 +91,6 @@ backfill-report.json
 .template-snapshot.json
 .cache-availability.json
 .stale-templates-slack.txt
+
+# -- A+ Student Notes export (student names + family constraints) --
+student-notes.json

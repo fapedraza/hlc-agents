@@ -218,6 +218,12 @@ const studentSeeds = [...students.values()].map(s => {
       lastSeen: fmtDate(t.last),
     }));
   const svc = (s.roster.service || '').toUpperCase();
+  // Concentration matters as much as count: one tutor at 97 sessions plus a
+  // cover at 9 is narrow, not varied.
+  const topShare = tutors.length ? tutors[0].share : 1;
+  const flexibility = tutors.length >= 4 ? 'flexible'
+    : (tutors.length >= 2 && topShare < 0.8) ? 'mixed'
+    : 'narrow';
   return {
     student: s.student,
     clientid: s.roster.clientid,
@@ -226,12 +232,31 @@ const studentSeeds = [...students.values()].map(s => {
     totalSessions: s.total,
     distinctTutors: tutors.length,
     tutors,
-    // Proposed rule: students with a small, stable tutor set are the ones worth
-    // seeding as `prefer`. A student who has seen 8 tutors has no meaningful
-    // preference to encode.
-    proposed: tutors.length > 0 && tutors.length <= 4 && s.total >= MIN_SESSIONS
-      ? { rule_type: 'prefer', tutors: tutors.filter(t => t.sessions >= 2).map(t => t.tutor) }
-      : null,
+    // WHAT HISTORY CAN AND CANNOT TELL US
+    //
+    // History is the OUTPUT of the scheduling process, not an elicitation of
+    // preference. "Taught by Ashley 44 times" usually means Ashley covers that
+    // slot, not that the student is restricted to Ashley. So:
+    //
+    //   `any`     - PROPOSABLE. A student who has demonstrably worked with
+    //               several tutors is evidence-backed as flexible.
+    //   `prefer`  - proposable only as CONTINUITY (changing tutor has a cost),
+    //               never as a constraint, and flagged for a human to confirm
+    //               whether it is a requirement or just who was available.
+    //   `only`    - NEVER proposable. Cannot be distinguished from a scheduling
+    //               artifact.
+    //   `exclude` - NEVER proposable. Absence from history proves nothing, and
+    //               the A+ notes field turned out to be an ops log (no-shows,
+    //               subs, payment), not a preference store. Human-only.
+    //
+    // The earlier version dropped every student with >4 tutors, which silently
+    // hid the 88 most flexible students and biased the reviewer toward encoding
+    // rigidity. Everyone with enough history is now included.
+    flexibility, proposed: s.total < MIN_SESSIONS || !tutors.length ? null
+      : flexibility === 'narrow'
+        ? { rule_type: 'prefer', basis: 'continuity', tutors: tutors.filter(t => t.sessions >= 2).map(t => t.tutor),
+            check: 'requirement, or just who was free?' }
+        : { rule_type: 'any', basis: `worked with ${tutors.length} tutors`, tutors: [] },
     confidence: s.total >= 20 ? 'high' : s.total >= MIN_SESSIONS ? 'medium' : 'low',
   };
 }).sort((a, b) => b.totalSessions - a.totalSessions);
@@ -276,6 +301,9 @@ for (const t of teacherProfiles.filter(t => !t.teaches.includes('LC') && t.incid
 
 const seeded = studentSeeds.filter(s => s.proposed);
 console.log(`\n=== STUDENT TUTOR SEEDS ===`);
-console.log(`${studentSeeds.length} students with history; ${seeded.length} have a proposable 'prefer' rule (<=4 tutors, >=${MIN_SESSIONS} sessions)`);
+const byRule = seeded.reduce((a, x) => { a[x.proposed.rule_type] = (a[x.proposed.rule_type] || 0) + 1; return a; }, {});
+console.log(`${studentSeeds.length} students with history; ${seeded.length} with a proposal ` +
+  `(${byRule.any || 0} 'any' = demonstrably flexible, ${byRule.prefer || 0} 'prefer' = continuity, needs confirming)`);
+console.log(`NOTE: 'only' and 'exclude' are never proposed - neither is derivable from history.`);
 console.log(`by confidence: high ${seeded.filter(s => s.confidence === 'high').length}, medium ${seeded.filter(s => s.confidence === 'medium').length}`);
 console.log(`\nwrote seed-teacher-categories.json and seed-student-tutors.json to ${OUT_DIR}`);
