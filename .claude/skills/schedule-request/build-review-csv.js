@@ -141,6 +141,26 @@ const sCsv = toCsv([
   '>> ONLY these tutors', '>> PREFER these tutors', '>> NEVER these tutors', '>> Notes',
 ], sRows);
 
+// A focused sheet: only the rows that actually need a human decision. Everything
+// else is a student who demonstrably works with many tutors, where `any` is the
+// right answer and there is nothing to confirm.
+//
+// This is NOT the earlier mistake of silently dropping flexible students. Then,
+// the default proposal was `prefer` and hiding them biased the reviewer toward
+// rigidity. Now the default for them is `any`, which is correct, and the omission
+// is stated in the sheet rather than concealed.
+const NEEDS = r => r[6] /* A+ note */ || r[5] === 'one main tutor';
+const focusRows = sRows.filter(NEEDS);
+const skipped = sRows.length - focusRows.length;
+focusRows.push([]);
+focusRows.push([`(${skipped} other students work with several tutors and are treated as "any" - no rule needed. Full list in review-students.csv if you want it.)`]);
+fs.writeFileSync(path.join(DIR, 'review-students-focus.csv'), toCsv([
+  'Student', 'Service', 'Sessions', '# Tutors', 'Tutors seen (sessions)', 'Pattern',
+  'A+ Student Note today', 'A+ says NEVER', 'A+ says PREFER', 'Tell family of tutor change?', 'Oldest rule dated',
+  '>> ONLY these tutors', '>> PREFER these tutors', '>> NEVER these tutors', '>> Notes',
+], focusRows));
+console.log(`focus sheet: ${focusRows.length - 2} rows needing a decision (${skipped} flexible students summarised)`);
+
 fs.writeFileSync(path.join(DIR, 'review-teachers.csv'), tCsv);
 fs.writeFileSync(path.join(DIR, 'review-students.csv'), sCsv);
 console.log(`teachers: ${tRows.length} rows -> review-teachers.csv`);
