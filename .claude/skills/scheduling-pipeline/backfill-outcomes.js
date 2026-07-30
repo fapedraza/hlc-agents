@@ -154,6 +154,10 @@ for (const r of histRows) {
     date: mdyToISO(r['Session Date']), time: toHHMM(r['Start Time']),
     tutor: (r['Teacher'] || '').trim(), status: r['Session Status'],
     cancelled: CANCELLED.has(norm(r['Session Status'])),
+    // When the booking was last touched. Without this we cannot tell a session
+    // staff created IN RESPONSE to a recommendation from one that already
+    // existed and merely happens to fall near the proposed date.
+    updated: mdyToISO(r['Last Update Date']),
   });
 }
 
@@ -254,7 +258,11 @@ if (APPLY) {
     const postedDay = rec.slack.postedISO.slice(0, 10);
     // A session that predates the request cannot be a response to it. This was
     // flagging a 5/30 session as staff acting on a 6/6 request.
-    const responsive = s => s.date && s.date >= postedDay;
+    // A session only counts as a response if it was created or changed AFTER we
+    // posted. Date proximity alone was wrong: it matched sessions last touched
+    // days BEFORE the recommendation, which produced four bogus
+    // `bot-blocked-staff-acted` verdicts.
+    const responsive = s => s.date && s.date >= postedDay && s.updated && s.updated >= postedDay;
     const live = sess.filter(s => !s.cancelled);
     const onDate  = propDate ? live.filter(s => s.date === propDate) : [];
     const nearDate = propDate ? live.filter(s => responsive(s) && Math.abs((new Date(s.date) - new Date(propDate)) / 86400000) <= 7) : [];
@@ -278,7 +286,13 @@ if (APPLY) {
         : onDate.length ? 'still-booked'
         : 'cancel-unverifiable';
     }
-    else if (action === 'BLOCKED') verdict = nearDate.length ? 'bot-blocked-staff-acted' : 'blocked-no-booking';
+    else if (action === 'BLOCKED') {
+      // Only a booking staff actually made after we gave up counts against us.
+      const responsiveBookings = nearDate.filter(responsive);
+      verdict = responsiveBookings.length ? 'bot-blocked-staff-acted'
+        : (onDate.length || nearDate.length) ? 'blocked-but-slot-already-booked'
+        : 'blocked-no-booking';
+    }
     else if (!onDate.length && !nearDate.length) verdict = 'no-booking';
     else {
       const exact = onDate.find(s => recTutor && sameTutor(s.tutor, recTutor) && (!propTime || s.time === propTime));
