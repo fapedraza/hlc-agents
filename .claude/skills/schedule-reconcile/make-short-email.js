@@ -29,7 +29,8 @@ const typeColors = {
   'Double Booked': ['#f3e5f5','#6a1b9a'],
   'Schedule Mismatch': ['#fefcbf','#975a16'],
   'Session/Retest Overlap': ['#ffcdd2','#b71c1c'],
-  'Tutor Overloaded': ['#ffe0b2','#e65100']
+  'Tutor Overloaded': ['#ffe0b2','#e65100'],
+  '1:1 Double Booked': ['#ffebee','#c62828']
 };
 const tbadge = t => {
   const [bg, fg] = typeColors[t] || ['#edf2f7','#4a5568'];
@@ -49,7 +50,7 @@ for (const d of perDay) {
 perDayRows += `<tr style="background:#edf2f7;font-weight:700;"><td style="${td}">Total</td><td style="${td};text-align:right;">${totL}</td><td style="${td};text-align:right;">${totA}</td><td style="${td};text-align:right;">${totM}</td><td style="${td};text-align:right;color:${totI>0?'#c53030':'#276749'};">${totI}</td></tr>`;
 
 let typeRows = '';
-const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded'];
+const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded','1:1 Double Booked'];
 for (const t of typeOrder) if (typeCounts[t]) typeRows += `<tr><td style="${td}">${tbadge(t)}</td><td style="${td};text-align:right;font-weight:700;">${typeCounts[t]}</td></tr>`;
 
 let discRows = '';

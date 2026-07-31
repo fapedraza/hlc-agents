@@ -329,44 +329,69 @@ for (const key of Object.keys(retestByKey)) {
   }
 }
 
-// Tutor overload: more than MAX_CONCURRENT students booked against one tutor in
-// the same 30-minute window (requested by Mariah 2026-07-27). Her example: Jen
-// A. W. would have had 5 students 3:00-3:30 if Miller Morissette had not been
-// moved off her.
+// Tutor overload. Mariah, 2026-07-29:
+//   "the 1:1 students should not be double booked. So, if there are 4x floor
+//    students and 1x 1:1 students booked on the same tutor in the same 30min
+//    block, the issue is that there is a 1:1 student double booked, NOT
+//    necessarily that there are 5 students... Same issue if there were 3x floor
+//    and 1x 1:1. So we definitely need it to still detect those double bookings,
+//    but make an exception for the floor (LS) with a cap of 4 students at a time"
 //
-// NOTE: she framed this as "floor students", but the A+ Schedule Report has no
-// service column, so this counts CONCURRENT STUDENTS regardless of service.
-// Arguably the better measure - 4 floor students plus a 1:1 is still five people
-// needing one tutor. Retests are already routed out of aplusSessions above.
-const MAX_CONCURRENT = 4;
+// So this is TWO rules, not one threshold. The earlier single ">4 concurrent"
+// check missed 3 floor + 1 one-to-one entirely, because that is only 4.
+//   1. a non-floor session sharing a tutor with any other student  -> always wrong
+//   2. floor sessions                                              -> cap of 4
+// Needs the Service column, added to report 763 on 2026-07-30.
+const FLOOR_CAP = 4;
 const OVERLOAD_BUCKET = 30;
+const isFloor       = svc => /floor/i.test(svc || '');
+const isNonTeaching = svc => /^(admin work|front desk coverage)$/i.test((svc || '').trim());
+const hasServiceCol = colIdx.service != null;
+
 const byStaffDay = {};
 for (const s of aplusSessions) {
   if (!s.isActive || !s.staff || !s.startTime || !s.endTime) continue;
-  if (!dateSet.has(s.date)) continue;   // respect the report's date range
+  if (!dateSet.has(s.date)) continue;
+  if (isNonTeaching(s.service)) continue;         // Admin Work / Front Desk Coverage
   (byStaffDay[`${s.staff}|${s.date}`] = byStaffDay[`${s.staff}|${s.date}`] || []).push(s);
 }
 for (const [key, sess] of Object.entries(byStaffDay)) {
   const [staff, date] = key.split('|');
   const lo = Math.min(...sess.map(s => timeToMins(s.startTime)));
   const hi = Math.max(...sess.map(s => timeToMins(s.endTime)));
-  let cur = null;
   const windows = [];
+  let cur = null;
   for (let t = Math.floor(lo / OVERLOAD_BUCKET) * OVERLOAD_BUCKET; t < hi; t += OVERLOAD_BUCKET) {
     const here = sess.filter(s => timeToMins(s.startTime) < t + OVERLOAD_BUCKET && timeToMins(s.endTime) > t);
     const students = [...new Set(here.map(s => s.studentName))];
-    if (students.length > MAX_CONCURRENT) {
-      if (cur && cur.end === t) { cur.end = t + OVERLOAD_BUCKET; students.forEach(x => cur.students.add(x)); cur.peak = Math.max(cur.peak, students.length); }
-      else { if (cur) windows.push(cur); cur = { start: t, end: t + OVERLOAD_BUCKET, students: new Set(students), peak: students.length }; }
+    if (students.length <= 1) { if (cur) { windows.push(cur); cur = null; } continue; }
+
+    // Without a Service column every session looks the same, so fall back to the
+    // old single threshold rather than silently mis-classifying everything as 1:1.
+    const nonFloor = hasServiceCol ? here.filter(s => !isFloor(s.service)) : [];
+    let kind = null;
+    if (hasServiceCol && nonFloor.length) {
+      kind = { type: '1:1 Double Booked',
+               detail: `${[...new Set(nonFloor.map(s => s.studentName))].join(', ')} (${[...new Set(nonFloor.map(s => s.service))].join('/')}) shares this slot` };
+    } else if (students.length > FLOOR_CAP) {
+      kind = { type: 'Tutor Overloaded', detail: `${students.length} students at once (floor cap ${FLOOR_CAP})` };
+    }
+    if (!kind) { if (cur) { windows.push(cur); cur = null; } continue; }
+
+    if (cur && cur.end === t && cur.type === kind.type) {
+      cur.end = t + OVERLOAD_BUCKET; students.forEach(x => cur.students.add(x));
+    } else {
+      if (cur) windows.push(cur);
+      cur = { start: t, end: t + OVERLOAD_BUCKET, students: new Set(students), type: kind.type, detail: kind.detail };
     }
   }
   if (cur) windows.push(cur);
   for (const w of windows) {
     discrepancies.push({
-      type: 'Tutor Overloaded',
+      type: w.type,
       student: staff,                       // the row's subject is the TUTOR here
       date,
-      lcos_detail: `${w.peak} students at once (max ${MAX_CONCURRENT})`,
+      lcos_detail: w.detail,
       aplus_detail: `${minsToTime(w.start)}-${minsToTime(w.end)}: ${[...w.students].join(', ')}`,
       lcos_mins: 0, aplus_mins: 0
     });
@@ -376,7 +401,7 @@ for (const [key, sess] of Object.entries(byStaffDay)) {
 const typePriority = {
   'Missing in A+': 1, 'Missing in LCOS': 2,
   'Not Cancelled in A+': 3, 'Not Cancelled in LCOS': 4,
-  'Schedule Mismatch': 5, 'Double Booked': 6, 'Session/Retest Overlap': 7, 'Tutor Overloaded': 8
+  'Schedule Mismatch': 5, 'Double Booked': 6, 'Session/Retest Overlap': 7, 'Tutor Overloaded': 8, '1:1 Double Booked': 9
 };
 discrepancies.sort((a,b) =>
   a.date.localeCompare(b.date) ||

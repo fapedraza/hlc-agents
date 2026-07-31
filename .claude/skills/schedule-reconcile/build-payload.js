@@ -75,7 +75,7 @@ dashboardRows.push(['','','','','','']);
 if (stats.discrepancies > 0) {
   dashboardRows.push(['Breakdown by Type','','','','','']);
   dashboardRows.push(['Type','Count','','','','']);
-  const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded'];
+  const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded','1:1 Double Booked'];
   for (const t of typeOrder) {
     if (typeCounts[t]) dashboardRows.push([t, String(typeCounts[t]),'','','','']);
   }
@@ -139,7 +139,8 @@ const typeBadgeColors = {
   'Double Booked': 'background:#f3e5f5;color:#6a1b9a;',
   'Schedule Mismatch': 'background:#fefcbf;color:#975a16;',
   'Session/Retest Overlap': 'background:#ffcdd2;color:#b71c1c;',
-  'Tutor Overloaded': 'background:#ffe0b2;color:#e65100;'
+  'Tutor Overloaded': 'background:#ffe0b2;color:#e65100;',
+  '1:1 Double Booked': 'background:#ffebee;color:#c62828;'
 };
 const typeBadge = t => `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;${typeBadgeColors[t]||''}">${esc(t)}</span>`;
 
@@ -218,7 +219,7 @@ if (stats.discrepancies > 0) {
   html += `<div style="padding:0 32px;"><div style="${sectionHdr}">BREAKDOWN BY TYPE</div>
   <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:8px;">
     <tr><th style="${thL}">Type</th><th style="${thR}">Count</th></tr>`;
-  const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded'];
+  const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded','1:1 Double Booked'];
   let i = 0;
   for (const t of typeOrder) {
     if (!typeCounts[t]) continue;
