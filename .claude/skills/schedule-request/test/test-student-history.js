@@ -11,10 +11,10 @@
  * Usage: node test-student-history.js   (exit 0 = all pass)
  */
 const assert = require('assert');
-const { summarizeStudentHistory, buildHistoryCandidates } = require('./lib/student-history');
-const { isNonTutor } = require('./lib/non-tutors');
-const { findQualifiedTutors } = require('./lib/discover-tutors');
-const { effectiveSubject } = require('./lib/orchestrate');
+const { summarizeStudentHistory, buildHistoryCandidates } = require('../lib/student-history');
+const { isNonTutor } = require('../lib/non-tutors');
+const { findQualifiedTutors } = require('../lib/discover-tutors');
+const { effectiveSubject } = require('../lib/orchestrate');
 
 const NOW = new Date('2026-06-26T12:00:00');   // fixed "today" for reproducibility
 

@@ -21,9 +21,9 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { parseStudentNote } = require('./lib/parse-student-note');
+const { parseStudentNote } = require('../lib/parse-student-note');
 
-const SR = __dirname;
+const SR = path.join(__dirname, '..');
 const PIPE = path.join(SR, '..', 'scheduling-pipeline');
 const load = (p, what) => {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); }

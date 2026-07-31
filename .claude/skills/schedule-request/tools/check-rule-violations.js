@@ -11,10 +11,10 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { parseStudentNote } = require('./lib/parse-student-note');
+const { parseStudentNote } = require('../lib/parse-student-note');
 
-const notes = JSON.parse(fs.readFileSync(path.join(__dirname, 'student-notes.json'), 'utf8'));
-const HIST = path.join(__dirname, '.cache', 'history-report.csv');
+const notes = JSON.parse(fs.readFileSync(path.join(path.join(__dirname, '..'), 'student-notes.json'), 'utf8'));
+const HIST = path.join(path.join(__dirname, '..'), '.cache', 'history-report.csv');
 const CANCELLED = new Set(['cancelled','canceled','no-show','no show','noshow','deleted','removed','void','anm','anm - paid','anm - unpaid','absent no makeup','abs','vac']);
 const norm = s => (s||'').toLowerCase().replace(/\s+/g,' ').trim();
 

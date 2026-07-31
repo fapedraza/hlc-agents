@@ -30,9 +30,9 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { isNonTutor } = require('./lib/non-tutors');
+const { isNonTutor } = require('../lib/non-tutors');
 
-const SKILL_DIR = __dirname;
+const SKILL_DIR = path.join(__dirname, '..');
 const ROSTER_PATH = path.join(SKILL_DIR, 'lcos-roster.json');
 const HISTORY_CSV = path.join(SKILL_DIR, '.cache', 'history-report.csv');
 const ALL_STUDENTS_PATH = path.join(SKILL_DIR, 'lcos-students-all.json');

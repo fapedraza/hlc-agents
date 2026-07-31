@@ -15,7 +15,7 @@ const DIR = process.argv[2] || '.';
 // to become a competing list.
 let apNotes = new Map(), parseNote = null, wantsNotice = () => false;
 try {
-  ({ parseStudentNote: parseNote, wantsTutorChangeNotice: wantsNotice } = require('./lib/parse-student-note'));
+  ({ parseStudentNote: parseNote, wantsTutorChangeNotice: wantsNotice } = require('../lib/parse-student-note'));
   for (const s of JSON.parse(fs.readFileSync(path.join(DIR, 'student-notes.json'), 'utf8')).students) {
     if (s.note) apNotes.set(s.student.toLowerCase().trim(), s.note);
   }

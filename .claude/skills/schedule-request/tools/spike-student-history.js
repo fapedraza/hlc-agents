@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { chromium } = require('playwright');
-const { parseAplusCsv } = require('./lib/orchestrate');
+const { parseAplusCsv } = require('../lib/orchestrate');
 
 const REPORTS_URL = 'https://account.appointment-plus.com/ap/ap_admin_v2/appointments_index_v2.php?p=reports';
 const APLUS_SCHEDULE_REPORT_ID = '763';

@@ -17,10 +17,10 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { TextRequestApi, readEnv } = require('../text-request-read/lib/tr-api');
+const { TextRequestApi, readEnv } = require('../../text-request-read/lib/tr-api');
 
 const ENV_PATH = 'C:/Projects/hlc-agents/.env';
-const OUT_DEFAULT = path.join(__dirname, 'backtest-corpus.json');
+const OUT_DEFAULT = path.join(path.join(__dirname, '..'), 'backtest-corpus.json');
 
 const SCHED_RE = /\b(reschedul|resched|cancel|move|switch|change|makeup|make[- ]?up|session|appointment|tutor|available|availabilit|book|slot|push back|earlier|later|come in|next week|this week|can('?| no)t make|won'?t make|miss|absent|time work|what time|earlier time|new time|swap)\b/i;
 

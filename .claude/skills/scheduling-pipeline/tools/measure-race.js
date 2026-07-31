@@ -16,7 +16,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const PIPE = __dirname;
+const PIPE = path.join(__dirname, '..');
 const TR = path.join(PIPE, '..', 'text-request-read');
 const { TextRequestApi, readEnv } = require(path.join(TR, 'lib', 'tr-api.js'));
 

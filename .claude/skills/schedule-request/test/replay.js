@@ -26,11 +26,11 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
-const { readEnv, navStaffList, listTeachers } = require('./lib/aplus');
-const { orchestrateOne, loadRoster, loadAplusCsv } = require('./lib/orchestrate');
-const { fetchScheduleReportRowsCached } = require('./lib/fetch-history');
+const { readEnv, navStaffList, listTeachers } = require('../lib/aplus');
+const { orchestrateOne, loadRoster, loadAplusCsv } = require('../lib/orchestrate');
+const { fetchScheduleReportRowsCached } = require('../lib/fetch-history');
 
-const SKILL_DIR = __dirname;
+const SKILL_DIR = path.join(__dirname, '..');
 
 function parseArgs(argv) {
   const a = { casesDir: path.join(SKILL_DIR, 'replay-cases'), out: path.join(SKILL_DIR, 'replay-report.json') };

@@ -18,9 +18,9 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
-const { readEnv, navStaffList, listTeachers, getTeacherSchedule } = require('./lib/aplus');
+const { readEnv, navStaffList, listTeachers, getTeacherSchedule } = require('../lib/aplus');
 
-const SKILL_DIR = __dirname;
+const SKILL_DIR = path.join(__dirname, '..');
 const DEFAULT_OUT = path.join(SKILL_DIR, 'aplus-availability.json');
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 

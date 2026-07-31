@@ -32,13 +32,13 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const SR_DIR = path.join(__dirname, '..', 'schedule-request');
+const SR_DIR = path.join(path.join(__dirname, '..'), '..', 'schedule-request');
 const { readEnv, navStaffList, listTeachers, getTeacherSchedule } = require(path.join(SR_DIR, 'lib', 'aplus.js'));
 const { isNonTutor } = require(path.join(SR_DIR, 'lib', 'non-tutors.js'));
 
 const HISTORY_CSV = path.join(SR_DIR, '.cache', 'history-report.csv');
-const SNAPSHOT = path.join(__dirname, '.template-snapshot.json');
-const LEGACY_CACHE = path.join(__dirname, '.cache-availability.json');
+const SNAPSHOT = path.join(path.join(__dirname, '..'), '.template-snapshot.json');
+const LEGACY_CACHE = path.join(path.join(__dirname, '..'), '.cache-availability.json');
 
 const argv = process.argv.slice(2);
 const argVal = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };

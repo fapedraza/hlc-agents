@@ -43,10 +43,10 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
-const { readEnv, navStaffList, listTeachers } = require('./lib/aplus');
-const { orchestrateOne, loadRoster, loadAplusCsv, parseAplusCsv, APLUS_CSV_PATH } = require('./lib/orchestrate');
+const { readEnv, navStaffList, listTeachers } = require('../lib/aplus');
+const { orchestrateOne, loadRoster, loadAplusCsv, parseAplusCsv, APLUS_CSV_PATH } = require('../lib/orchestrate');
 
-const SKILL_DIR = __dirname;
+const SKILL_DIR = path.join(__dirname, '..');
 
 function parseArgs(argv) {
   const a = { casesDir: path.join(SKILL_DIR, 'cases'), out: null, resultsDir: null };

@@ -1,4 +1,4 @@
-const { parseStudentNote, wantsTutorChangeNotice } = require('./lib/parse-student-note');
+const { parseStudentNote, wantsTutorChangeNotice } = require('../lib/parse-student-note');
 const cases = [
   '7/13/2026 No Connie',
   '7/8/2026 No Leta for math',
