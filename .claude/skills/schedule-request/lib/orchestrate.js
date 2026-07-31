@@ -24,8 +24,11 @@ const { computeOpenSlots, fmt12 } = require('./slots');
 
 const SKILL_DIR = path.join(__dirname, '..');
 const ROSTER_PATH = path.join(SKILL_DIR, 'lcos-roster.json');
-// Schedule-reconcile downloads booked appointments here on each reconcile run.
-const APLUS_CSV_PATH = 'C:/projects/hlc-agents/aplus.csv';
+// Fallback source of booked appointments, used only when the wide history pull
+// fails (see historyRows below). This was a separate narrow CSV that the reconcile
+// downloaded; since 2026-07-30 report 763 carries every column both needed, so
+// both read the one shared cache and nothing writes aplus.csv anymore.
+const APLUS_CSV_PATH = path.join(__dirname, '..', '.cache', 'history-report.csv');
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 

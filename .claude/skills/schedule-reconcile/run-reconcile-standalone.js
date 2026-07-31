@@ -2,10 +2,10 @@
  * run-reconcile-standalone.js — Claude-free scheduled runner
  *
  * Pipeline:
- *   fetch-lcos.js    → lcos_raw.json
- *   parse-lcos.js    → lcos_parsed.json
- *   fetch-aplus.js   → aplus.csv
- *   reconcile.js     → reconciliation.json
+ *   fetch-lcos.js       → lcos_raw.json
+ *   parse-lcos.js       → lcos_parsed.json
+ *   prewarm-history.js  → the shared A+ report cache (schedule-request/.cache)
+ *   reconcile.js        → reconciliation.json
  *   write-sheet.js   → (Google Sheet update)
  *   build-payload.js → email.html + payload.json
  *   send-email.js    → (Gmail send) [skipped if --no-email]
@@ -25,6 +25,13 @@ const fs = require('fs');
 
 const SKILL_DIR = __dirname;
 const WORK_DIR = path.join(SKILL_DIR, '..', '..', '..').replace(/\\/g, '/');
+// The A+ side of the reconcile used to be its own report pull (fetch-aplus.js →
+// aplus.csv). Report 763 gained Service/Student Notes/Teacher Type on 2026-07-30,
+// so it is now the same report the scheduling pipeline already caches — one pull
+// serves both. The reconcile forces it fresh, since a stale fix would surface as
+// a false discrepancy, and the pipeline reuses that pull for the next 3h.
+const SR_DIR = path.join(SKILL_DIR, '..', 'schedule-request');
+const HISTORY_CACHE = path.join(SR_DIR, '.cache', 'history-report.csv');
 const DEFAULT_RECIPIENTS = ['staff@huntingtonissaquah.com', 'riddickb@hlcmail.com'];
 
 function parseArgs() {
@@ -42,10 +49,6 @@ function parseArgs() {
 
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-function mdy(ymdStr) {
-  const [y,m,d] = ymdStr.split('-').map(Number);
-  return `${m}/${d}/${y}`;
 }
 
 function step(name, fn) {
@@ -79,7 +82,7 @@ function main() {
 
   const lcosRaw = path.join(WORK_DIR, 'lcos_raw.json');
   const lcosParsed = path.join(WORK_DIR, 'lcos_parsed.json');
-  const aplusCsv = path.join(WORK_DIR, 'aplus.csv');
+  const aplusCsv = HISTORY_CACHE;
   const reconciliation = path.join(WORK_DIR, 'reconciliation.json');
   const emailHtml = path.join(WORK_DIR, 'email.html');
   const payloadJson = path.join(WORK_DIR, 'payload.json');
@@ -92,8 +95,9 @@ function main() {
   step('2/8 parse-lcos', () =>
     run('node', [path.join(SKILL_DIR, 'parse-lcos.js'), lcosRaw, lcosParsed]));
 
-  step('3/8 fetch-aplus', () =>
-    run('node', [path.join(SKILL_DIR, 'fetch-aplus.js'), mdy(start), mdy(end), aplusCsv]));
+  // reconcile.js verifies the cache actually spans [start, end] before using it.
+  step('3/8 fetch-aplus (shared cache)', () =>
+    run('node', [path.join(SR_DIR, 'prewarm-history.js'), '--force']));
 
   step('4/8 reconcile', () =>
     run('node', [path.join(SKILL_DIR, 'reconcile.js'), lcosParsed, aplusCsv, start, end, reconciliation]));

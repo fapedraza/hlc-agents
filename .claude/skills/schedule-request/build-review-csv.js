@@ -20,7 +20,7 @@ try {
     if (s.note) apNotes.set(s.student.toLowerCase().trim(), s.note);
   }
   console.log(`loaded ${apNotes.size} existing A+ Student Notes`);
-} catch (e) { console.log('(no student-notes.json - run fetch-student-notes.js first)'); }
+} catch (e) { console.log('(no student-notes.json - run extract-student-notes.js first)'); }
 const noteFor = name => apNotes.get((name || '').toLowerCase().trim()) || '';
 const teachers = JSON.parse(fs.readFileSync(path.join(DIR, 'seed-teacher-categories.json'), 'utf8'));
 const students = JSON.parse(fs.readFileSync(path.join(DIR, 'seed-student-tutors.json'), 'utf8'));

@@ -201,6 +201,26 @@ function eachDate(start, end) {
   return out;
 }
 
+// ---- guard: does the A+ export actually span the requested window? ----
+// Since 2026-07-30 the A+ side is the shared schedule-report cache, a FIXED
+// window (about -150/+45 days) rather than a pull for exactly this range. If it
+// ever fails to cover the window, every LCOS session silently becomes "Missing
+// in A+" — a catastrophic false report that looks like ordinary output. Fail loudly.
+{
+  const dates = aplusBlocks.map(b => b.date).filter(Boolean).sort();
+  if (!dates.length) {
+    console.error(`A+ export ${csvPath} contains no dated sessions — refusing to reconcile.`);
+    process.exit(1);
+  }
+  const min = dates[0], max = dates[dates.length - 1];
+  if (startDate < min || endDate > max) {
+    console.error(`A+ export covers ${min}..${max} but the reconcile needs ${startDate}..${endDate}.`);
+    console.error('Refusing to reconcile against a partial export: every unmatched LCOS session');
+    console.error('would be reported as "Missing in A+". Widen the report window and retry.');
+    process.exit(1);
+  }
+}
+
 // ---- reconcile ----
 // Filter blocks to the requested date range
 const dateSet = new Set(eachDate(startDate, endDate));
@@ -413,14 +433,19 @@ discrepancies.sort((a,b) =>
   a.student.localeCompare(b.student)
 );
 
-// Stats
+// Stats.
+// The A+ side is now a fixed-window shared cache (~6 months), not a pull for this
+// range, so counting every block would report "A+: 8969" against "LCOS: 298" and
+// push 6 months of rows into the A+ Schedule tab. Everything reported is scoped
+// to the reconcile window, which is what these numbers always meant.
+const aplusInWindow = aplusBlocks.filter(b => dateSet.has(b.date));
 const stats = {
   lcosTotal: lcosBlocks.length,
   lcosActive: lcosBlocks.filter(b => b.hasActive).length,
   lcosCancelled: lcosBlocks.filter(b => !b.hasActive).length,
-  aplusTotal: aplusBlocks.length,
-  aplusActive: aplusBlocks.filter(b => b.hasActive).length,
-  aplusCancelled: aplusBlocks.filter(b => !b.hasActive).length,
+  aplusTotal: aplusInWindow.length,
+  aplusActive: aplusInWindow.filter(b => b.hasActive).length,
+  aplusCancelled: aplusInWindow.filter(b => !b.hasActive).length,
   matched,
   discrepancies: discrepancies.length
 };
@@ -449,7 +474,7 @@ const result = {
   startDate, endDate, dates,
   stats, perDay, typeCounts,
   discrepancies,
-  lcosSessions, aplusSessions: aplusAllSessions
+  lcosSessions, aplusSessions: aplusAllSessions.filter(s => dateSet.has(s.date))
 };
 
 fs.writeFileSync(outPath, JSON.stringify(result, null, 2));
