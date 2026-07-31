@@ -117,7 +117,17 @@ for (const [k, al] of Object.entries(aliases)) {
 }
 
 const cancelStatuses = ['cancelled','canceled','no-show','no show','noshow','deleted','removed','void','anm','anm - paid','anm - unpaid','absent no makeup'];
-const excludedServices = ['head teacher','training/shadow','admin project'];
+// Role placeholders. A+ books non-teaching time against a pseudo-student the way
+// retests are booked against a pseudo-tutor: "Head Teacher" (200 rows in six
+// months) and "Teacher Training" (7). None can exist in LCOS, so each one became a
+// false "Missing in LCOS" — a median of 4 per weekly report, in all 26 of the last
+// 26 weeks. 'head teacher' was already listed here but only ever compared against
+// the status and service; matching the STUDENT NAME is what was missing.
+//
+// The name is the right key, not the service: 79 of these rows are booked against
+// ordinary tutoring services (Homework, Math, Learning Center 1:1 A), and one real
+// student legitimately has an "Admin Work" booking that must not be swallowed.
+const excludedLabels = ['head teacher','teacher training','training/shadow','admin project'];
 
 const aplusSessions = [];
 const aplusAllSessions = []; // includes cancelled for the A+ Schedule tab
@@ -149,10 +159,11 @@ for (let i = 1; i < csvRows.length; i++) {
   };
   aplusAllSessions.push(sessObj);
 
-  // Exclude non-student services
-  if (excludedServices.some(x => statusLower.includes(x) || service.toLowerCase().includes(x))) continue;
-  // Also check if the status field itself is head teacher etc
-  if (excludedServices.includes(statusLower)) continue;
+  // Exclude role placeholders and non-student services. These stay in
+  // aplusAllSessions (pushed above) so the A+ Schedule tab still shows them —
+  // they simply stop generating discrepancies they can never resolve.
+  const studentLower = student.toLowerCase();
+  if (excludedLabels.some(x => studentLower.includes(x) || statusLower.includes(x) || service.toLowerCase().includes(x))) continue;
   // Retests (e.g. staff "McRetest Retest") are excluded from the normal
   // LCOS<->A+ reconcile (they aren't recurring LCOS sessions), but we keep the
   // active ones to detect a student booked into a retest AND a session at the
