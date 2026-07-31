@@ -4,6 +4,7 @@ REM Runs on a Task Scheduler repetition trigger every ~15 min, so a stalled
 REM session can never silently freeze monitoring.
 cd /d C:\projects\hlc-agents
 set SETTINGS=C:\projects\hlc-agents\.claude\skills\scheduling-pipeline\service\scheduling-pipeline-settings.json
+set PROMPT=C:\projects\hlc-agents\.claude\skills\scheduling-pipeline\pass-prompt.md
 set LOGFILE=%USERPROFILE%\.claude\logs\scheduling-pipeline-pass.log
 if not exist "%USERPROFILE%\.claude\logs" mkdir "%USERPROFILE%\.claude\logs"
 
@@ -16,8 +17,12 @@ REM and a failure here is logged but must not block the pass.
 REM 32-bit PowerShell is required: the SQL Anywhere ODBC driver is 32-bit only.
 C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\projects\hlc-agents\.claude\skills\schedule-request\refresh-roster.ps1" >> "%LOGFILE%" 2>&1
 
+REM The classifier prompt lives in pass-prompt.md rather than inline here. It is
+REM the only LLM step in the pipeline and it is a spec, so it belongs somewhere
+REM reviewable and diffable - a shell string is not that. claude -p reads it from
+REM stdin, which also supersedes the old < NUL guard against a blocking stdin.
 echo ===== %date% %time% pass start ===== >> "%LOGFILE%"
-claude -p "Execute exactly ONE pass of the scheduling pipeline, following the skill at .claude/skills/scheduling-pipeline/SKILL.md, then STOP. Do not loop. Step 1: run  node .claude/skills/scheduling-pipeline/pipeline-run.js pending  to fetch new Text Request threads. Step 2: for EACH thread listed by pending, classify it from the thread text only. If a thread shows inQueue false or has no messages, run pipeline-run.js skip with reason no-longer-in-queue. If it is a schedulable request, write a payload JSON file under .claude/skills/scheduling-pipeline/payloads/ named by the thread hash and run  node .claude/skills/scheduling-pipeline/pipeline-run.js process  on that file. Use the customer's own words for the subject and prefer the student's current tutor. If it is NOT schedulable, run  node .claude/skills/scheduling-pipeline/pipeline-run.js skip  with the hash and a short reason. You MUST actually run the process or skip command for EACH thread - do not just describe it. After handling all threads, run  node .claude/skills/scheduling-pipeline/pipeline-run.js status  and confirm zero records remain at status new; if any remain, go back and process or skip each one until none are new. Do NOT call any LCOS, Appointment-Plus, or Slack tools directly - the node scripts handle all of that. Step 3: run  node .claude/skills/scheduling-pipeline/poll-decisions.js  to record any staff decisions. Finish with a one-line summary." --settings "%SETTINGS%" < NUL >> "%LOGFILE%" 2>&1
+type "%PROMPT%" | claude -p --settings "%SETTINGS%" >> "%LOGFILE%" 2>&1
 REM Close the loop on past recommendations. Staff answer the FAMILY in Text
 REM Request, not the bot in Slack -- only 4 of 38 recommendations ever got a
 REM vote. This reads the staff reply + the resulting A+ booking and records what
