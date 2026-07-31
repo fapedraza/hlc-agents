@@ -32,8 +32,11 @@ const rows = useAdhoc
   ? notes.sessions.map(s => ({ 'Student Name': s.student, 'Teacher': s.teacher,
       'Session Date': s.date, 'Start Time': '', 'Session Status': '', 'Service': s.service }))
   : parseCsv(fs.readFileSync(HIST,'utf8'));
+// Report 763 gained a Service column on 2026-07-30, so the cached-report path is
+// no longer the degraded one: scoped rules ("No Leta for math") are checkable
+// from either source now.
 console.log(useAdhoc ? '(using ad-hoc rows - Service available, scoped rules checkable)'
-                     : '(using report 763 - NO Service column, scoped rules cannot be evaluated)');
+                     : '(using cached report 763 - Service available, scoped rules checkable)');
 const today = new Date().toISOString().slice(0,10);
 const tutors = [...new Set(rows.map(r => (r['Teacher']||'').trim()).filter(Boolean))];
 const tokens = t => new Set((t.toLowerCase().match(/[a-z]+/g)) || []);

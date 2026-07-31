@@ -110,8 +110,9 @@ const mdy = d => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
     const iDate = at('session date');
     for (const r of body) {
       // Per-session rows too: a scoped rule ("No Leta for math") cannot be checked
-      // without knowing each session's service, and the standard report 763 has no
-      // Service column. This is the only place we can get that today.
+      // without knowing each session's service. Report 763 gained a Service column
+      // on 2026-07-30, so this is no longer the only source for it — but this report
+      // is still the only one carrying Student Notes and Teacher Type.
       if ((r[iName] || '').trim()) sessions.push({
         student: (r[iName] || '').trim(), teacher: (r[iStaff] || '').trim(),
         service: (r[iSvc] || '').trim(), date: (r[iDate] || '').trim(),
