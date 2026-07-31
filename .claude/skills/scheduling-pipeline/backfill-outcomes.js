@@ -24,6 +24,9 @@ const SR_DIR = path.join(PIPE_DIR, '..', 'schedule-request');
 const STATE_PATH = path.join(PIPE_DIR, 'pipeline-state.json');
 const HISTORY_CSV = path.join(SR_DIR, '.cache', 'history-report.csv');
 const TR_MESSAGES = path.join(PIPE_DIR, '..', 'text-request-read', 'messages.json');
+// A+ reports calendar dates in the center's local time. Anything compared against
+// them has to be converted first, never sliced off a UTC ISO string.
+const CENTER_TZ = 'America/Los_Angeles';
 
 const { TextRequestApi, readEnv } = require(path.join(PIPE_DIR, '..', 'text-request-read', 'lib', 'tr-api.js'));
 
@@ -255,7 +258,15 @@ if (APPLY) {
 
     // ── A+: what actually got booked? ──
     const sess = studentName ? (sessionsByStudent.get(norm(studentName)) || []) : [];
-    const postedDay = rec.slack.postedISO.slice(0, 10);
+    // postedISO is UTC; A+ `date`/`updated` are the center's LOCAL calendar dates.
+    // Slicing the UTC string compared the two across a 7-hour offset, so anything
+    // the bot posted after 17:00 Pacific carried the NEXT day's date and no
+    // same-evening staff booking could ever satisfy `updated >= postedDay`.
+    // 10 of 42 recommendations (24%) sit in that window - all evening posts, which
+    // is exactly when scheduling traffic peaks - and each one silently downgraded a
+    // responsive staff booking to "already booked before we asked".
+    const postedDay = new Date(rec.slack.postedISO)
+      .toLocaleDateString('en-CA', { timeZone: CENTER_TZ });
     // A session that predates the request cannot be a response to it. This was
     // flagging a 5/30 session as staff acting on a 6/6 request.
     // A session only counts as a response if it was created or changed AFTER we
