@@ -36,6 +36,9 @@ const SR_DIR = path.join(SKILL_DIR, '..', 'schedule-request');
 const MESSAGES_PATH = path.join(TR_DIR, 'messages.json');
 const REC_DIR = path.join(SKILL_DIR, 'recommendations');
 const CHANNEL = 'CMR1PPZ9B';
+// How many times `process` may fail on one record before it stops being retried
+// and lands in `error` for a human to look at.
+const MAX_PROCESS_ATTEMPTS = 3;
 
 const node = process.execPath;
 const run = (script, args, opts = {}) =>
@@ -130,29 +133,52 @@ function cmdProcess(argv) {
   state.update(st, hash, { status: 'classified', classification });
   state.save(st);
 
-  fs.mkdirSync(REC_DIR, { recursive: true });
-  const recFile = path.join(REC_DIR, `${hash}.json`);
-  process.stderr.write(`[process] running schedule-request (live A+) for ${payload.contactName}…\n`);
-  run(path.join(SR_DIR, 'demo-orchestrate.js'), [payloadPath, '--out', recFile], { stdio: ['ignore', 'inherit', 'inherit'] });
-  const rec = JSON.parse(fs.readFileSync(recFile, 'utf8'));
-  const action = rec.recommended?.action || 'UNKNOWN';
+  try {
+    fs.mkdirSync(REC_DIR, { recursive: true });
+    const recFile = path.join(REC_DIR, `${hash}.json`);
+    process.stderr.write(`[process] running schedule-request (live A+) for ${payload.contactName}…\n`);
+    run(path.join(SR_DIR, 'demo-orchestrate.js'), [payloadPath, '--out', recFile], { stdio: ['ignore', 'inherit', 'inherit'] });
+    const rec = JSON.parse(fs.readFileSync(recFile, 'utf8'));
+    const action = rec.recommended?.action || 'UNKNOWN';
 
-  let ts = null;
-  if (dryRun) {
-    process.stderr.write('[process] --dry-run: previewing Slack post (not sending, not recording recommended)\n');
-    run(path.join(SR_DIR, 'post-slack.js'), [recFile, '--dry-run'], { stdio: ['ignore', 'inherit', 'inherit'] });
-    state.update(st, hash, { recommendationFile: recFile, recommendedAction: action });
-  } else {
-    const out = run(path.join(SR_DIR, 'post-slack.js'), [recFile, '--channel', CHANNEL, '--seed-reactions']);
-    process.stdout.write(out);
-    ts = (out.match(/ts=([\d.]+)/) || [])[1] || null;
+    let ts = null;
+    if (dryRun) {
+      process.stderr.write('[process] --dry-run: previewing Slack post (not sending, not recording recommended)\n');
+      run(path.join(SR_DIR, 'post-slack.js'), [recFile, '--dry-run'], { stdio: ['ignore', 'inherit', 'inherit'] });
+      state.update(st, hash, { recommendationFile: recFile, recommendedAction: action });
+    } else {
+      const out = run(path.join(SR_DIR, 'post-slack.js'), [recFile, '--channel', CHANNEL, '--seed-reactions']);
+      process.stdout.write(out);
+      ts = (out.match(/ts=([\d.]+)/) || [])[1] || null;
+      state.update(st, hash, {
+        status: 'recommended', recommendationFile: recFile, recommendedAction: action,
+        slack: ts ? { channel: CHANNEL, ts, postedISO: state.nowISO() } : null,
+      });
+    }
+    state.save(st);
+    process.stderr.write(`[process] ${payload.contactName}: ${action}${ts ? ` posted (ts=${ts})` : ''}. State: ${JSON.stringify(state.summary(st))}\n`);
+  } catch (err) {
+    // `classified` is set optimistically above, BEFORE the live A+ run and the
+    // Slack post — and `pending` only ever re-emits status `new`. So any throw in
+    // here used to strand the record silently and permanently: four sat at
+    // `classified` from 2026-06-07 until 2026-07-31, never retried, never surfaced.
+    //
+    // Hand it back to `new` so the next pass picks it up through the path that
+    // already exists (no new selection logic, and re-classification sees any newer
+    // messages in the thread). Give up after MAX_PROCESS_ATTEMPTS so a genuinely
+    // broken record lands in `error` and is visible instead of looping forever.
+    const attempts = (st.requests[hash].attempts || 0) + 1;
+    const giveUp = attempts >= MAX_PROCESS_ATTEMPTS;
     state.update(st, hash, {
-      status: 'recommended', recommendationFile: recFile, recommendedAction: action,
-      slack: ts ? { channel: CHANNEL, ts, postedISO: state.nowISO() } : null,
+      status: giveUp ? 'error' : 'new',
+      attempts,
+      lastError: String(err.message || err).slice(0, 500),
     });
+    state.save(st);
+    process.stderr.write(`[process] ${payload.contactName}: FAILED on attempt ${attempts}/${MAX_PROCESS_ATTEMPTS} — ` +
+      `${giveUp ? 'giving up, marked `error`' : 'requeued as `new`'}: ${err.message}\n`);
+    process.exit(1);
   }
-  state.save(st);
-  process.stderr.write(`[process] ${payload.contactName}: ${action}${ts ? ` posted (ts=${ts})` : ''}. State: ${JSON.stringify(state.summary(st))}\n`);
 }
 
 // ─── skip: mark a non-schedulable message handled ────────────────────────────
