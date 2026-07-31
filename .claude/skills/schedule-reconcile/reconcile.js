@@ -274,6 +274,10 @@ for (const key of allKeys) {
 
 // Double bookings
 for (const b of aplusBlocks) {
+  // aplusBlocks spans the whole cached report (months), not the requested window.
+  // Every other check filters on dateSet; this one did not, so the daily report
+  // carried stale double-bookings from as far back as the cache reached.
+  if (!dateSet.has(b.date)) continue;
   const active = b.sessions.filter(s => s.isActive && s.startTime && s.endTime);
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
