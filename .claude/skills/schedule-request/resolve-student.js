@@ -161,11 +161,22 @@ function resolveStudent(contactName, rosterRows, opts = {}) {
   let targetStudent = null;
   if (opts.student && students.length) {
     const hintTokens = tokenize(opts.student);
-    const matched = students.find(s => {
-      const pool = tokenize(`${s.name} ${s.nickname || ''}`);
-      return hintTokens.some(h => pool.includes(h));
-    });
-    if (matched) { students = [matched]; targetStudent = matched.name; }
+    // Siblings SHARE A SURNAME, so "does any token match" resolved every
+    // multi-student contact to whoever happened to be listed first: the hint
+    // "Morgan Lan" matched "Nolan Lan" on `lan` and returned Nolan. The bot then
+    // reasoned over the wrong child's history and tutors entirely.
+    //
+    // Score by how many tokens overlap and require a STRICT winner. A hint that
+    // ties (e.g. just the surname "Lan") is genuinely ambiguous, so leave every
+    // sibling in play rather than picking one arbitrarily.
+    const ranked = students
+      .map(s => ({ s, hits: hintTokens.filter(h => tokenize(`${s.name} ${s.nickname || ''}`).includes(h)).length }))
+      .sort((a, b) => b.hits - a.hits);
+    const [best, runnerUp] = ranked;
+    if (best && best.hits > 0 && (!runnerUp || best.hits > runnerUp.hits)) {
+      students = [best.s];
+      targetStudent = best.s.name;
+    }
   }
 
   // Build the queries to try, weighted. Each parsed student is a full-weight

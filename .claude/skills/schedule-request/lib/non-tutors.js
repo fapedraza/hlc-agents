@@ -2,10 +2,18 @@
  * lib/non-tutors.js — exclusion list for A+ "teacher" entries that aren't real
  * tutors.
  *
- * A+ carries admin/placeholder entries in its staff list (e.g. "Head Teacher",
- * which represents admin hours, per Mariah). These can otherwise be surfaced as
- * recommendable tutors by subject discovery or even appear in session history.
- * `isNonTutor()` filters them out everywhere candidates are assembled.
+ * Two kinds of entry belong here, both meaning "never auto-recommend this name":
+ *
+ *   1. Placeholders that are not people at all - "Head Teacher" (admin hours) and
+ *      "Retest" (the pseudo-tutor proctored practice tests are booked against).
+ *   2. Real staff who DO teach but must not be auto-assigned. Mariah Landon, 2026-08-01:
+ *      "This required a more personal response, explaining why Mariah was not
+ *      available as a regular tutor due to administrative responsibilities."
+ *      She covers floor and fills gaps - 32 sessions across 23 students - but is
+ *      the majority tutor for none of them, so excluding her costs no student
+ *      their history anchor.
+ *
+ * `isNonTutor()` filters these out everywhere candidates are assembled.
  *
  * The list lives in `non-tutors.json` (sibling of the skill dir) so it can be
  * edited without touching code.

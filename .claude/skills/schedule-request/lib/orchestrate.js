@@ -684,13 +684,26 @@ async function orchestrateOne({
     }
     return name;
   };
+  // Declared here, not with the other request-type flags below, because the
+  // candidate-assembly step immediately after this needs to know to skip itself.
+  const isLookup = !backtest && (payload.requestType || '').toLowerCase() === 'lookup';
   const named = (payload.candidateTutors || []).filter(n => !isNonTutor(n)).map(disambiguateNamed);
   const discovered = new Set();
   let candidateNames = [...named];
   let candidateSource = named.length ? 'named' : null;
 
+  // A `lookup` reports what is already booked. It picks no tutor, so every
+  // candidate assembled here would be evaluated against the live A+ pages and
+  // then thrown away — an info request costing exactly as much as a booking.
+  // Skip the lot: no candidates, no discovery, no per-tutor page loads.
+  if (isLookup) {
+    candidateNames = [];
+    candidateSource = 'n/a (lookup — no tutor selection)';
+  }
+
   // Merge in history tutors (deduped vs named), best-ranked first.
   for (const h of historyCands) {
+    if (isLookup) break;
     if (candidateNames.length >= 8) break;
     if (isNonTutor(h.tutor)) continue;
     if (!candidateNames.some(n => sameTutor(n, h.tutor))) candidateNames.push(h.tutor);
@@ -698,7 +711,7 @@ async function orchestrateOne({
   if (!candidateSource && history.found) candidateSource = 'history';
 
   // Fallback discovery only when we have neither a named nor a history tutor.
-  const wantDiscover = candidateNames.length === 0;
+  const wantDiscover = !isLookup && candidateNames.length === 0;
   if (wantDiscover) {
     const qualsIndex = loadQualsIndex();
     if (!qualsIndex) {
@@ -794,7 +807,6 @@ async function orchestrateOne({
   // comparison remains comparable; the new branches are live-only.
   const reqType = (payload.requestType || '').toLowerCase();
   const isProgram = !backtest && (reqType === 'program' || reqType === 'new-program' || Number(payload.sessionsPerWeek) >= 2);
-  const isLookup = !backtest && reqType === 'lookup';
   const isCancel = !backtest && !isProgram && reqType === 'cancel';
   const isReschedule = !backtest && !isProgram && (reqType === 'reschedule' || reqType === 'makeup');
   const noExactTime = !backtest && !isProgram && !payload.proposedTime;
