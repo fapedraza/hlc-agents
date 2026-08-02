@@ -86,6 +86,7 @@ const ACTION_EMOJI = {
   PROGRAM_OFFER:     ':date:',
   BLOCKED:           ':warning:',
   SCHEDULE_INFO:     ':mag:',
+  RESTORE:           ':leftwards_arrow_with_hook:',
 };
 
 /** Lowercased word tokens of a name, e.g. "Zahera Shaik (Shaheer (JB))" → [zahera, shaik, shaheer, jb]. */
@@ -185,6 +186,13 @@ function buildSlackText(rec, threadEntry) {
         ? `on ${rec.recommended.windowFrom}`
         : `in the next ${rec.recommended.windowDays} days`} — check before telling the family they have nothing booked.`);
     }
+  } else if (action === 'RESTORE') {
+    // The family wants the slot they already had, not a new one. Say so plainly:
+    // staff un-cancel, they do not re-book.
+    const sess = rec.recommended.sessions || [];
+    lines.push(`*Reinstate* ${sess.length} existing session(s) on ${dateNice} — ` +
+      `${sess.map(s => `${s.start || '?'}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join(', ')}.`);
+    lines.push(`_These are already on the schedule as cancelled — un-cancel rather than booking new._`);
   } else if (action === 'CANCEL') {
     const sess = rec.recommended.sessions || [];
     lines.push(sess.length

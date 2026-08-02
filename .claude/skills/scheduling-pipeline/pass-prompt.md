@@ -41,6 +41,29 @@ books, moves, or cancels anything.
 If the family asks for information AND a change in the same message, classify it as
 the change (`reschedule` / `cancel` / etc.), not as `lookup`.
 
+### `courtesy` - an optional warm closing line
+
+Families usually say WHY they are writing. Staff acknowledge it; the bot's drafts
+did not. Mariah, on an otherwise-correct cancellation reply: *"Response was fine,
+but would be better to add something wishing Layla a happy camping trip."*
+
+When the family gives a clearly positive reason, add a short `courtesy` field - one
+sentence, in the center's voice, that will be appended to the reply draft:
+
+| the family said | `courtesy` |
+|---|---|
+| "Layla leaves Monday for a 5-night camp" | `Have a great time at camp, Layla!` |
+| "we have family visiting next week" | `Enjoy the time with your family!` |
+| "she's away for a swim meet" | `Good luck at the meet!` |
+
+**Omit `courtesy` entirely when the reason is sensitive or unclear** - illness,
+injury, bereavement, family difficulty, money trouble, or anything you would not
+be confident saying out loud to that parent. No line is always safe; a
+tone-deaf one is not. Most messages have no reason at all, so leaving it out is
+the normal case.
+
+Never put scheduling facts in `courtesy` - it is the closing pleasantry only.
+
 ### Then
 
 - If a thread shows `inQueue: false` or has no messages, run `pipeline-run.js skip`

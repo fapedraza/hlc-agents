@@ -291,6 +291,30 @@ function shortTutorName(lastFirst) {
   return c ? c[1].trim() : lastFirst;
 }
 
+/**
+ * First name from an A+ Schedule-Report teacher string. That column is
+ * "Last First" with no comma, which shortTutorName cannot split (it needs the
+ * comma or a parenthesised nickname), so families were being told "with Ulrich
+ * Connie" and "with Hamilton Leta" - surname first. Fall back to the trailing
+ * token only when shortTutorName made no progress.
+ */
+function tutorDisplayName(name) {
+  if (!name) return '';
+  const short = shortTutorName(name);
+  return short === name ? String(name).trim().split(/\s+/).pop() : short;
+}
+
+/**
+ * "2026-08-05" -> "Wed 8/5". Reply drafts go to PARENTS; an ISO date in a text
+ * message reads like a database row. Ops text (LCOS/A+ steps) keeps the ISO form,
+ * where being unambiguous matters more than reading well.
+ */
+function familyDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${fmtDay(iso)} ${+m}/${+d}`;
+}
+
 function studentFirstName(rosterRow) {
   return rosterRow?.firstname || rosterRow?.firstName || 'your student';
 }
@@ -359,6 +383,7 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
   const student = studentFirstName(rosterRow);
   const dayName = payload.proposedDate ? fmtDay(payload.proposedDate) : '';
   const dateNice = payload.proposedDate ? `${dayName} ${payload.proposedDate}` : '';
+  const dateForFamily = familyDate(payload.proposedDate);   // parent-facing: "Wed 8/5"
   const timeNice = payload.proposedTime || '';
   const subject = effectiveSubject(payload, rosterRow).subject;   // #1: never echo a garbled subject
 
@@ -370,13 +395,8 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
     // cannot split (it needs the comma or a parenthesised nickname) — it would
     // hand the family "with Ulrich Connie", surname first. Take the trailing token
     // here only; the comma-less form is specific to this report field.
-    const tutorFirst = t => shortTutorName(t) === t ? String(t).trim().split(/\s+/).pop() : shortTutorName(t);
-    // Always carry the calendar date. "Wed 6pm" for a session ten days out reads
-    // as THIS Wednesday to a parent.
-    const dayAndDate = iso => {
-      const [y, m, d] = iso.split('-');
-      return `${fmtDay(iso)} ${+m}/${+d}`;
-    };
+    const tutorFirst = tutorDisplayName;
+    const dayAndDate = familyDate;   // "Wed 8/12" - never a bare weekday, see below
     // Retests are booked against a pseudo-tutor ("McRetest Retest"), so a practice
     // test would otherwise read "with Retest". Keep the session, drop the name.
     const realTutor = t => t && !/retest/i.test(t);
@@ -393,6 +413,18 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
       textReplyDraft: sess.length
         ? `Hi! ${student} is booked for ${nice}. Let us know if you'd like to change anything. - HLC Issaquah`
         : `Hi! Let me double-check ${student}'s schedule and confirm right back with you. - HLC Issaquah`,
+    };
+  }
+  if (recommended.action === 'RESTORE') {
+    const sess = recommended.sessions || [];
+    const nice = sess.map(s => fmt12(s.start)).join(' and ');
+    const who = tutorDisplayName(recommended.tutor) || 'their usual tutor';
+    return {
+      lcos: `Reinstate ${student}'s existing session(s) on ${payload.proposedDate} (${sess.map(s => s.start).join(', ')}) — ` +
+        `clear the cancellation rather than inserting a new row, so the recurring schedule stays intact.`,
+      aplus: `Un-cancel the existing booking(s) on ${payload.proposedDate}: ${sess.map(s => `${s.start}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join('; ')}.`,
+      payment: 'No new charge — this is the session they already had.',
+      textReplyDraft: `Great news — we've put ${student} back on for ${dateForFamily} at ${nice}${recommended.tutor ? ` with ${who}` : ''}. See you then!`,
     };
   }
   if (recommended.action === 'PROGRAM_OFFER') {
@@ -421,8 +453,8 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
       aplus: sess.length ? `Cancel the A+ session(s) on ${payload.proposedDate}: ${list}.` : 'No A+ session found to cancel.',
       payment: 'No charge for a cancellation — apply credit/makeup per policy.',
       textReplyDraft: sess.length
-        ? `Hi! I've canceled ${student}'s session on ${dateNice}. Let us know if you'd like to reschedule it. - HLC Issaquah`
-        : `Hi! I don't see a session for ${student} on ${dateNice} — could you confirm the date? - HLC Issaquah`,
+        ? `Hi! I've canceled ${student}'s session on ${dateForFamily}. Let us know if you'd like to reschedule it. - HLC Issaquah`
+        : `Hi! I don't see a session for ${student} on ${dateForFamily} — could you confirm the date? - HLC Issaquah`,
     };
   }
   if (recommended.action === 'OFFER_SLOTS') {
@@ -433,7 +465,7 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
       aplus: 'Hold — book once the family confirms one of the offered times.',
       payment: 'Hold.',
       textReplyDraft: slots
-        ? `Hi! ${tutorShort} has these times open on ${dateNice}: ${slots}. Which works best for ${student}? - HLC Issaquah`
+        ? `Hi! ${tutorShort} has these times open on ${dateForFamily}: ${slots}. Which works best for ${student}? - HLC Issaquah`
         : `Hi! Let me check ${tutorShort}'s availability and send a few options shortly. - HLC Issaquah`,
     };
   }
@@ -442,7 +474,7 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
       lcos: `No new LCOS row needed — verify the existing session (clientid ${rosterRow?.clientid || '?'}, ${dateNice}). If its notes mention "waiting on payment", update once payment is processed.`,
       aplus: 'No new A+ booking needed — A+ already has this session.',
       payment: 'Process payment if the customer authorized it in the thread (the typical case). Handle separately from this scheduling confirmation.',
-      textReplyDraft: `Confirmed! ${student}'s ${subject} session with ${tutorShort} is set for ${dateNice} at ${timeNice}. Thank you!`,
+      textReplyDraft: `Confirmed! ${student}'s ${subject} session with ${tutorShort} is set for ${dateForFamily} at ${timeNice}. Thank you!`,
     };
   }
   if (recommended.action === 'PROCEED') {
@@ -451,7 +483,7 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
       lcos: `Insert a SPEC session for ${student} on ${payload.proposedDate} ${ev.proposedStart}–${ev.proposedEnd} (service ${rosterRow?.service || 'ST'}, attendcode EXT until paid). Note: "Scheduled via text on ${new Date().toISOString().slice(0,10)}".`,
       aplus: `Book "Subject Tutoring" with ${tutorShort} on ${payload.proposedDate} at ${ev.proposedStart} for ${payload.sessionLength || '1 hour'}.`,
       payment: 'Charge the card on file if authorized in the thread, otherwise request payment. Handle separately from this scheduling confirmation.',
-      textReplyDraft: `Great! We've scheduled ${student}'s ${subject} session with ${tutorShort} for ${dateNice} at ${timeNice}. See you then!`,
+      textReplyDraft: `Great! We've scheduled ${student}'s ${subject} session with ${tutorShort} for ${dateForFamily} at ${timeNice}. See you then!`,
     };
   }
   if (recommended.action === 'MULTIPLE_OPTIONS') {
@@ -824,6 +856,31 @@ async function orchestrateOne({
       .map(r => ({ tutor: (r['Teacher'] || '').trim(), start: toHHMM24((r['Start Time'] || '').trim()), duration: (r['Duration'] || '').trim() }));
   }
   /**
+   * The student's CANCELLED sessions on a date — the pool a restore draws from.
+   *
+   * Mariah, 2026-08-01, on a family asking for Morgan to come in on Tue 8/4:
+   * "Morgan already normally has a session on Tuesdays at 10am, so they were
+   * probably looking to come in at their usual time (so 'uncancelling' the
+   * session)." The bot instead proposed a brand-new 4:30pm slot with a different
+   * tutor, because it had no concept of restoring what was already there.
+   */
+  function studentCancelledSessionsOn(isoDate) {
+    if (!isoDate || !bookingAvailable) return [];
+    const mdy = isoToMDY(isoDate);
+    return bookingRows
+      .filter(r => isOwnStudent((r['Student Name'] || '').trim(), resolution.bestMatch)
+        && (r['Session Date'] || '').trim() === mdy
+        && CANCELLED.has((r['Session Status'] || '').toLowerCase()))
+      .map(r => ({
+        tutor: (r['Teacher'] || '').trim(),
+        start: toHHMM24((r['Start Time'] || '').trim()),
+        duration: (r['Duration'] || '').trim(),
+        service: (r['Service'] || '').trim(),
+      }))
+      .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  }
+
+  /**
    * Every non-cancelled session this student has from `fromISO` forward, across
    * ALL tutors, for `days` days. Backs the read-only `lookup` request type.
    *
@@ -891,6 +948,18 @@ async function orchestrateOne({
     (t.isStudentsTutor ? 1000 : 0) + (!t.discovered ? 100 : 0) -
     (t.servicesOfferedCount || 0) * 0.1;
 
+  // Restore pool: cancelled sessions on the requested date, but only when the
+  // student has nothing ACTIVE that day (else this is an already-booked case, not
+  // a restore) and the request is not itself a cancellation. If the family named a
+  // time, require a cancelled session at that time.
+  const restorable = (() => {
+    if (isLookup || isCancel || isProgram || !payload.proposedDate) return [];
+    if (studentSessionsOn(payload.proposedDate).length) return [];
+    const pool = studentCancelledSessionsOn(payload.proposedDate);
+    const wantHHMM = payload.proposedTime ? toHHMM24(payload.proposedTime) : null;
+    return wantHHMM ? pool.filter(s => s.start === wantHHMM) : pool;
+  })();
+
   let recommended;
   if (isLookup) {
     // #0 Lookup: the family is asking what is ALREADY on the calendar, not asking
@@ -954,6 +1023,20 @@ async function orchestrateOne({
       reason: sessions.length
         ? `Cancel ${sessions.length} existing session(s) for ${studentFirstName(resolution.bestMatch)} on ${payload.proposedDate} — no tutor selection needed.`
         : `No existing (non-cancelled) session found for this student on ${payload.proposedDate}; confirm the date with staff.`,
+    };
+  } else if (restorable.length) {
+    // #0b Restore: the family wants their USUAL slot back, not a new one. Only
+    // fires when nothing active is already on that date (otherwise there is
+    // nothing to restore) and, if they named a time, when a cancelled session
+    // actually sits at it — asking for 3pm should not silently reinstate 10am.
+    const tutors = [...new Set(restorable.map(s => s.tutor).filter(Boolean))];
+    recommended = {
+      action: 'RESTORE',
+      sessions: restorable,
+      tutor: tutors.length === 1 ? tutors[0] : null,
+      reason: `${studentFirstName(resolution.bestMatch)} already has ${restorable.length} cancelled ` +
+        `session(s) on ${payload.proposedDate}${tutors.length ? ` with ${tutors.join(', ')}` : ''} — ` +
+        `reinstate the existing slot(s) rather than booking something new.`,
     };
   } else if (noExactTime) {
     // #2 No exact time (family gave a range / none) → offer the preferred or
@@ -1043,6 +1126,28 @@ async function orchestrateOne({
   }
 
   const actionPlan = buildActionPlan(recommended, payload, tutorEvals, resolution.bestMatch);
+  // Mariah, 2026-08-01, on an otherwise-correct cancellation reply: "Response was
+  // fine, but would be better to add something wishing Layla a happy camping trip."
+  //
+  // The classifier supplies this line, because writing a natural courtesy is the
+  // one part of a draft a template cannot do - it depends on WHY the family wrote
+  // in. The templates stay deterministic and the phrase is simply appended. The
+  // prompt tells it to omit `courtesy` for anything sensitive (illness, family
+  // difficulty), so an absent phrase is the normal case, not a failure.
+  const COURTESY_OK = new Set(['PROCEED','CANCEL','RESTORE','ALREADY_BOOKED','OFFER_SLOTS','PROGRAM_OFFER','SCHEDULE_INFO']);
+  const nothingFound = Array.isArray(recommended.sessions) && recommended.sessions.length === 0;
+  if (actionPlan && actionPlan.textReplyDraft && payload.courtesy
+      && COURTESY_OK.has(recommended.action) && !nothingFound) {
+    // Sit it BEFORE the sign-off, not after it: appending blindly produced
+    // "... - HLC Issaquah Have a great time at camp!".
+    const courtesy = String(payload.courtesy).trim();
+    const SIGNOFF = /\s*[-\u2013\u2014]\s*HLC Issaquah\s*$/;
+    const draft = actionPlan.textReplyDraft;
+    const sign = draft.match(SIGNOFF);
+    actionPlan.textReplyDraft = sign
+      ? draft.replace(SIGNOFF, ` ${courtesy}${sign[0]}`)
+      : `${draft} ${courtesy}`;
+  }
 
   // Back-test comparison: predicted vs what staff actually did.
   let comparison = null;
