@@ -85,6 +85,7 @@ const ACTION_EMOJI = {
   OFFER_SLOTS:       ':calendar:',
   PROGRAM_OFFER:     ':date:',
   BLOCKED:           ':warning:',
+  SCHEDULE_INFO:     ':mag:',
 };
 
 /** Lowercased word tokens of a name, e.g. "Zahera Shaik (Shaheer (JB))" → [zahera, shaik, shaheer, jb]. */
@@ -170,6 +171,20 @@ function buildSlackText(rec, threadEntry) {
     } else {
       lines.push(`*Program request* (${rec.recommended.sessionsPerWeek}×/week) — no open slots auto-found; staff to build manually.`);
     }
+  } else if (action === 'SCHEDULE_INFO') {
+    // Read-only answer to "what's already booked?". No tutor proposal, nothing to
+    // approve — staff just relay it. Phrased so it can be copied straight into a reply.
+    const sess = rec.recommended.sessions || [];
+    if (sess.length) {
+      lines.push(`*Already on the calendar* — nothing to change:`);
+      sess.forEach(s => lines.push(
+        `• ${fmtDay(s.date)} ${s.date} ${s.start || '?'}${s.duration ? ` (${s.duration})` : ''}` +
+        `${s.tutor ? ` w/ ${s.tutor}` : ''}${s.service ? ` — ${s.service}` : ''}`));
+    } else {
+      lines.push(`*No sessions found* ${rec.recommended.windowDays === 1
+        ? `on ${rec.recommended.windowFrom}`
+        : `in the next ${rec.recommended.windowDays} days`} — check before telling the family they have nothing booked.`);
+    }
   } else if (action === 'CANCEL') {
     const sess = rec.recommended.sessions || [];
     lines.push(sess.length
@@ -209,6 +224,10 @@ function buildSlackText(rec, threadEntry) {
   lines.push('');
   if (action === 'BLOCKED' || action === 'UNKNOWN') {
     lines.push('_⚠️ No auto-recommendation — staff to handle. ❌ decline to dismiss._');
+  } else if (action === 'SCHEDULE_INFO') {
+    // Nothing was proposed, so there is nothing to accept or edit. Offering
+    // "reply with a tutor" on a read-only answer just invites a wrong click.
+    lines.push('_ℹ️ Information only — nothing to approve. ❌ decline if this reads wrong._');
   } else {
     lines.push('_✅ accept · ✏️ edit (reply with a tutor) · ❌ decline_');
   }

@@ -15,6 +15,34 @@ to fetch new Text Request threads.
 
 For EACH thread listed by `pending`, classify it from the thread text only.
 
+### What counts as schedulable
+
+Set `requestType` to one of these. **All five go through `process`, not `skip`:**
+
+| requestType | the family is asking to... |
+|---|---|
+| `new-session` | book a session that does not exist yet |
+| `reschedule` | move an existing session |
+| `makeup` | replace a missed session |
+| `cancel` | **remove an existing session** |
+| `lookup` | **be told what is already on the calendar** (no change requested) |
+
+`cancel` is a first-class request, not an absence of one. "We can't make Tuesday",
+"cancel next week's class", "he won't be in on 6/30" are all `cancel` - the pipeline
+finds the exact sessions and proposes removing them. Do NOT skip these as "not a
+booking" or "not a scheduling request"; a missed cancellation leaves a real session
+on the schedule and a tutor sitting idle.
+
+`lookup` is for "what time is Ryan's class today?", "confirming we're still Mon/Thu
+5:30", "is she booked this week?" - the family wants information, not a change. Set
+`proposedDate` if they named a day; leave it out for "this week". READ-ONLY: it never
+books, moves, or cancels anything.
+
+If the family asks for information AND a change in the same message, classify it as
+the change (`reschedule` / `cancel` / etc.), not as `lookup`.
+
+### Then
+
 - If a thread shows `inQueue: false` or has no messages, run `pipeline-run.js skip`
   with reason `no-longer-in-queue`.
 - If it IS a schedulable request, write a payload JSON file under
@@ -26,6 +54,12 @@ For EACH thread listed by `pending`, classify it from the thread text only.
 - If it is NOT schedulable, run:
 
       node .claude/skills/scheduling-pipeline/pipeline-run.js skip <hash> "<short reason>"
+
+  Genuinely not schedulable: billing and tuition questions, teacher-originated threads
+  (a tutor asking about their own hours or coverage), thanks/acknowledgements and
+  tapbacks, document requests, and absence notices that ask for nothing back. When you
+  skip, say WHY in the reason - the skip reason is the only record of this decision and
+  it is what gets audited later.
 
 You MUST actually run the `process` or `skip` command for EACH thread. Do not just
 describe it.

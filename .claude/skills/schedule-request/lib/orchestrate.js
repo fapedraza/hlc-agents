@@ -32,6 +32,16 @@ const APLUS_CSV_PATH = path.join(__dirname, '..', '.cache', 'history-report.csv'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
+// How far ahead a `lookup` reaches when the family didn't name a day ("is she
+// booked this week?"). Two weeks covers "this week" and "next week" without
+// dumping a term's worth of sessions into Slack.
+const LOOKUP_WINDOW_DAYS = 14;
+// A+ dates are the center's local calendar days. Deriving "today" from a UTC
+// slice puts every evening run on tomorrow's date — the bug that corrupted both
+// the latency numbers and the outcome verdicts before this.
+const CENTER_TZ = 'America/Los_Angeles';
+const centerToday = (now) => new Date(now).toLocaleDateString('en-CA', { timeZone: CENTER_TZ });
+
 // ─── loaders ──────────────────────────────────────────────────────────────────
 
 function loadRoster() {
@@ -352,6 +362,39 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
   const timeNice = payload.proposedTime || '';
   const subject = effectiveSubject(payload, rosterRow).subject;   // #1: never echo a garbled subject
 
+  if (recommended.action === 'SCHEDULE_INFO') {
+    // Read-only: there is nothing to book, move or cancel. The reply draft IS the
+    // deliverable — staff paste the answer back to the family.
+    const sess = recommended.sessions || [];
+    // The A+ Teacher column is "Last First" with no comma, which shortTutorName
+    // cannot split (it needs the comma or a parenthesised nickname) — it would
+    // hand the family "with Ulrich Connie", surname first. Take the trailing token
+    // here only; the comma-less form is specific to this report field.
+    const tutorFirst = t => shortTutorName(t) === t ? String(t).trim().split(/\s+/).pop() : shortTutorName(t);
+    // Always carry the calendar date. "Wed 6pm" for a session ten days out reads
+    // as THIS Wednesday to a parent.
+    const dayAndDate = iso => {
+      const [y, m, d] = iso.split('-');
+      return `${fmtDay(iso)} ${+m}/${+d}`;
+    };
+    // Retests are booked against a pseudo-tutor ("McRetest Retest"), so a practice
+    // test would otherwise read "with Retest". Keep the session, drop the name.
+    const realTutor = t => t && !/retest/i.test(t);
+    const nice = sess.map(s =>
+      `${dayAndDate(s.date)} at ${fmt12(s.start)}` +
+      `${realTutor(s.tutor) ? ` with ${tutorFirst(s.tutor)}` : ''}` +
+      `${!realTutor(s.tutor) && s.service ? ` (${s.service})` : ''}`).join(', ');
+    return {
+      lcos: 'Nothing to do — information request, no schedule change.',
+      aplus: 'Nothing to do — information request, no schedule change.',
+      payment: 'N/A.',
+      // Never assert "you have nothing booked" off an empty result: the report
+      // window or a name mismatch could be the reason. Hedge and let staff check.
+      textReplyDraft: sess.length
+        ? `Hi! ${student} is booked for ${nice}. Let us know if you'd like to change anything. - HLC Issaquah`
+        : `Hi! Let me double-check ${student}'s schedule and confirm right back with you. - HLC Issaquah`,
+    };
+  }
   if (recommended.action === 'PROGRAM_OFFER') {
     // #3 Program: propose the full weekly schedule for staff to confirm.
     const sch = recommended.proposedSchedule || [];
@@ -751,6 +794,7 @@ async function orchestrateOne({
   // comparison remains comparable; the new branches are live-only.
   const reqType = (payload.requestType || '').toLowerCase();
   const isProgram = !backtest && (reqType === 'program' || reqType === 'new-program' || Number(payload.sessionsPerWeek) >= 2);
+  const isLookup = !backtest && reqType === 'lookup';
   const isCancel = !backtest && !isProgram && reqType === 'cancel';
   const isReschedule = !backtest && !isProgram && (reqType === 'reschedule' || reqType === 'makeup');
   const noExactTime = !backtest && !isProgram && !payload.proposedTime;
@@ -767,6 +811,34 @@ async function orchestrateOne({
         && !CANCELLED.has((r['Session Status'] || '').toLowerCase()))
       .map(r => ({ tutor: (r['Teacher'] || '').trim(), start: toHHMM24((r['Start Time'] || '').trim()), duration: (r['Duration'] || '').trim() }));
   }
+  /**
+   * Every non-cancelled session this student has from `fromISO` forward, across
+   * ALL tutors, for `days` days. Backs the read-only `lookup` request type.
+   *
+   * bookingRows is the wide A+ schedule report (about -150/+45 days), so the
+   * forward side is already there; no extra pull.
+   */
+  function studentUpcomingSessions(fromISO, days) {
+    if (!bookingAvailable || !fromISO) return [];
+    const toISO = isoAddDays(fromISO, days);
+    return bookingRows
+      .filter(r => isOwnStudent((r['Student Name'] || '').trim(), resolution.bestMatch)
+        && !CANCELLED.has((r['Session Status'] || '').toLowerCase()))
+      .map(r => {
+        const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((r['Session Date'] || '').trim());
+        if (!m) return null;
+        return {
+          date: `${m[3]}-${String(+m[1]).padStart(2, '0')}-${String(+m[2]).padStart(2, '0')}`,
+          tutor: (r['Teacher'] || '').trim(),
+          start: toHHMM24((r['Start Time'] || '').trim()),
+          duration: (r['Duration'] || '').trim(),
+          service: (r['Service'] || '').trim(),
+        };
+      })
+      .filter(s => s && s.date >= fromISO && s.date < toISO)
+      .sort((a, b) => a.date.localeCompare(b.date) || String(a.start).localeCompare(String(b.start)));
+  }
+
   const evalFor = (name) => name && tutorEvals.find(t => t.found && t.teacher && (sameTutor(t.teacher.lastFirst, name) || sameTutor(t.candidate, name)));
   // #2 Build an OFFER_SLOTS recommendation for a tutor (their free times that day).
   function offerFor(tEval, label) {
@@ -808,7 +880,31 @@ async function orchestrateOne({
     (t.servicesOfferedCount || 0) * 0.1;
 
   let recommended;
-  if (isProgram) {
+  if (isLookup) {
+    // #0 Lookup: the family is asking what is ALREADY on the calendar, not asking
+    // to change it ("what time is Ryan's class today?", "confirming we're still
+    // Mon/Thu 5:30"). Staff answer these by hand today, usually after hours, and
+    // the answer is already sitting in the A+ report we pull every pass.
+    //
+    // Deliberately READ-ONLY and tutor-logic-free: no availability check, no
+    // ranking, no proposal. Being wrong here misstates a schedule; it cannot
+    // double-book anyone. That is why this branch runs before every other one.
+    const fromISO = payload.proposedDate || centerToday(now);
+    const windowDays = payload.proposedDate ? 1 : LOOKUP_WINDOW_DAYS;
+    const sessions = studentUpcomingSessions(fromISO, windowDays);
+    recommended = {
+      action: 'SCHEDULE_INFO',
+      sessions,
+      windowFrom: fromISO,
+      windowDays,
+      reason: sessions.length
+        ? `${studentFirstName(resolution.bestMatch)} has ${sessions.length} session(s) ` +
+          `${payload.proposedDate ? `on ${fromISO}` : `in the next ${windowDays} days`} — information only, nothing to change.`
+        : `No sessions found for ${studentFirstName(resolution.bestMatch)} ` +
+          `${payload.proposedDate ? `on ${fromISO}` : `in the next ${windowDays} days`}. ` +
+          `Confirm with staff before telling the family they have nothing booked.`,
+    };
+  } else if (isProgram) {
     // #3 Program request ("3 sessions per week"): propose a recurring WEEKLY
     // schedule with the anchored tutor, not a single session (Mariah: Abhi
     // "needs a complete schedule, not just an individual session").
@@ -986,7 +1082,14 @@ async function orchestrateOne({
     contactName: payload.contactName,
     requestType: payload.requestType,
     mode: backtest ? 'backtest' : 'live',
-    note: [payload.note || subjectNote, ...tutorNote, staleNote].filter(Boolean).join(' ') || null,   // explicit/subject caveat + tutor-disambiguation + stale-thread flag
+    // A lookup picks no tutor and needs no subject, so the subject-fallback and
+    // tutor-disambiguation caveats do not apply — and saying "tutor chosen from
+    // this student's history" on a read-only answer is simply untrue. Keep only
+    // an explicit note and the stale-thread flag.
+    note: (isLookup
+      ? [payload.note, staleNote]
+      : [payload.note || subjectNote, ...tutorNote, staleNote]
+    ).filter(Boolean).join(' ') || null,
     student: resolution.bestMatch && {
       clientid: resolution.bestMatch.clientid,
       name: `${resolution.bestMatch.firstname} ${resolution.bestMatch.lastname}`,
