@@ -49,7 +49,8 @@ const state_lib = require(path.join(PIPE_DIR, 'lib', 'pipeline-state.js'));
 /** Verdicts where we actually learned something worth writing back. */
 const INFORMATIVE = new Set(['match','match-cancelled','same-tutor-different-time',
   'wrong-category','wrong-tutor','different-but-allowed','different-tutor-unknown',
-  'bot-blocked-staff-acted','no-booking','blocked-no-booking','still-booked']);
+  'bot-blocked-staff-acted','no-booking','blocked-no-booking','still-booked',
+  'restored','restore-not-done']);
 
 const VERDICT_BLURB = {
   'match': 'staff did what the bot proposed',
@@ -63,6 +64,10 @@ const VERDICT_BLURB = {
   'no-booking': 'no booking resulted',
   'blocked-no-booking': 'bot found nothing and nothing was booked',
   'still-booked': 'cancellation requested but the session is still on the schedule',
+  'info-provided': 'answered a schedule question - no booking expected',
+  'restored': 'the cancelled session is back on the schedule',
+  'restore-not-done': 'proposed reinstating the session but it is still cancelled',
+  'restore-unverifiable': 'proposed a restore; no session found either way',
 };
 
 async function slackPost(token, channel, threadTs, text) {
@@ -296,6 +301,19 @@ if (APPLY) {
       verdict = cancelledOnDate.length ? 'match-cancelled'
         : onDate.length ? 'still-booked'
         : 'cancel-unverifiable';
+    }
+    else if (reqType === 'lookup' || action === 'SCHEDULE_INFO') {
+      // A lookup REPORTS what is already booked - it never creates one. Grading it
+      // against "did a booking appear" would mark every correct answer a failure
+      // and quietly drag the whole success rate down. Whether the information was
+      // right is a spot-check for a human, not something A+ can confirm.
+      verdict = 'info-provided';
+    }
+    else if (action === 'RESTORE') {
+      // Success is the previously-cancelled session being ACTIVE again that day.
+      verdict = onDate.length ? 'restored'
+        : cancelledOnDate.length ? 'restore-not-done'
+        : 'restore-unverifiable';
     }
     else if (action === 'BLOCKED') {
       // Only a booking staff actually made after we gave up counts against us.
