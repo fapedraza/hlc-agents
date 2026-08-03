@@ -48,6 +48,9 @@ const NO_SHEET = argv.includes('--no-sheet');
 const NO_POST = argv.includes('--no-post');
 // Below this, a Slack message is an acknowledgement rather than feedback.
 const MIN_NOTE_CHARS = 25;
+// The tabs this report owns, in reading order. Anything else in the sheet is
+// stray (e.g. the default "Sheet1") and gets removed.
+const TAB_ORDER = ['Summary', 'Staff Feedback', 'Outcomes', 'Declined', 'Attention'];
 
 function readEnv(p = ENV_PATH) {
   if (!fs.existsSync(p)) return {};
@@ -250,6 +253,23 @@ async function writeTab(sheets, spreadsheetId, existing, title, rows) {
       [['Status', 'Contact', 'Detail'],
         ...errors.map(r => ['error', r.contactName || '', r.lastError || '']),
         ...stuckNew.map(r => ['stuck at new', r.contactName || '', `first seen ${nice(r.firstSeenISO)}`])]);
+
+    // Housekeeping: a spreadsheet created by hand opens on an empty "Sheet1",
+    // and our tabs get appended AFTER it - so the doc looks empty on open even
+    // though every tab is populated. Drop that default tab and pin Summary first.
+    const after = await sheets.spreadsheets.get({ spreadsheetId: sheetId, fields: 'sheets.properties' });
+    const tabs = (after.data.sheets || []).map(x => x.properties);
+    const ours = new Set(TAB_ORDER);
+    const cleanup = tabs.filter(t => !ours.has(t.title))
+      .map(t => ({ deleteSheet: { sheetId: t.sheetId } }));
+    const summary = tabs.find(t => t.title === TAB_ORDER[0]);
+    if (summary && summary.index !== 0) {
+      cleanup.push({ updateSheetProperties: { properties: { sheetId: summary.sheetId, index: 0 }, fields: 'index' } });
+    }
+    if (cleanup.length) {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetId, resource: { requests: cleanup } });
+      console.log(`tidied ${cleanup.length} tab change(s) (removed stray tabs, Summary first)`);
+    }
 
     sheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}`;
     console.log(`wrote review sheet: ${sheetUrl}`);
