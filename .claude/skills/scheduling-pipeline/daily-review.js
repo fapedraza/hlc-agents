@@ -78,13 +78,21 @@ const nice = iso => iso ? new Date(iso).toLocaleString('en-CA', { timeZone: CENT
 // Skip reasons are free text written by the classifier. Theming them is how a new
 // use case becomes visible: "6 threads asking what is already booked" reads as a
 // feature request, where six separate one-line reasons read as noise.
+//
+// ORDER MATTERS - first match wins. The acknowledgement patterns MUST come first:
+// "tapback-only: liked staff's cancellation confirmation" mentions cancelling but
+// is a correct skip, and it was being counted as a MISSED cancellation. A theme
+// meant to flag misses must not flag the successes.
 const SKIP_THEMES = [
-  ['schedule question (possible `lookup`)', /what time|when is|which day|already (booked|scheduled)|confirm(ing|ation)? of existing|existing (mon|tue|wed|thu|fri|schedule)/],
+  ['thanks / acknowledgement',              /thank|tapback|liked |acknowledg|ack only|reply only|already (handled|confirmed|agreed|rescheduled) by/],
+  ['automated / no-reply traffic',          /otp|one.time code|verification code|cardpointe|automated/],
+  ['results conference / director meeting', /results (conference|meeting|review)|director|conference (already|with)|calendly/],
+  ['schedule question (possible `lookup`)', /what time|when is|which day|already (booked|scheduled)|confirm(ing|ation)? of existing|confirming (the )?format|existing (mon|tue|wed|thu|fri|schedule|booking)/],
   ['cancellation (should be `cancel`)',     /cancel/],
   ['billing / tuition',                     /tuition|billing|payment|invoice|pricing|rate|charge|refund/],
   ['teacher-originated',                    /teacher-originated|tutor asking|staff-to-teacher|own (schedule|hours|session)/],
-  ['no concrete date or time',              /no concrete|no specific|needs-info|unclear|vague|no day|no date/],
-  ['thanks / acknowledgement',              /thank|tapback|liked|acknowledg|ack only|reply only/],
+  ['voicemail / phone tag',                 /voicemail|phone tag|call(ed)? back|left a message/],
+  ['no concrete date or time',              /no concrete|no specific|needs-info|unclear|vague|no day|no date|no scheduling ask/],
   ['absence notice, nothing asked',         /absence|sick|out of town|vacation|camp|won.t be|not attend/],
   ['no longer in queue',                    /no-longer-in-queue|not in queue/],
 ];
