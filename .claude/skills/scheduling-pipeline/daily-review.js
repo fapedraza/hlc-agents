@@ -210,7 +210,17 @@ async function writeTab(sheets, spreadsheetId, existing, title, rows) {
   } catch (e) {
     console.error(`[daily-review] job health unavailable (${e.message}) - continuing.`);
   }
-  const failedJobs = jobs.filter(j => Number.isFinite(j.result) && j.result !== 0);
+  // Task Scheduler status codes are NOT exit codes. A task that is mid-run
+  // reports 267009 (SCHED_S_TASK_RUNNING) and one that has never fired reports
+  // 267011 (SCHED_S_TASK_HAS_NOT_RUN). Treating those as failures made the daily
+  // review flag ITSELF every single time it ran - caught only by triggering the
+  // real scheduled task rather than the script.
+  const NOT_A_FAILURE = new Set([
+    0,          // success
+    267009,     // 0x41301 currently running (this job, while it asks)
+    267011,     // 0x41303 has not run yet (newly registered)
+  ]);
+  const failedJobs = jobs.filter(j => Number.isFinite(j.result) && !NOT_A_FAILURE.has(j.result));
 
   // stuck
   const errors = recs.filter(r => r.status === 'error');
@@ -286,8 +296,8 @@ async function writeTab(sheets, spreadsheetId, existing, title, rows) {
         ...stuckNew.map(r => ['stuck at new', r.contactName || '', `first seen ${nice(r.firstSeenISO)}`]),
         ...(jobs.length ? [[], ['SCHEDULED JOBS', 'last result', 'last run']] : []),
         ...jobs.slice().sort((a, b) => a.name.localeCompare(b.name))
-          .map(j => [j.result === 0 ? 'job ok' : 'JOB FAILED', j.name,
-            `${j.result === 0 ? 'exit 0' : 'exit ' + j.result} - ${j.last ? nice(j.last) : 'never run'}${j.hrs != null ? ` (${j.hrs}h ago)` : ''}`])]);
+          .map(j => [NOT_A_FAILURE.has(j.result) ? (j.result === 267009 ? 'running now' : j.result === 267011 ? 'not yet run' : 'job ok') : 'JOB FAILED', j.name,
+            `${NOT_A_FAILURE.has(j.result) ? 'ok' : 'exit ' + j.result} - ${j.last ? nice(j.last) : 'never run'}${j.hrs != null ? ` (${j.hrs}h ago)` : ''}`])]);
 
     // Housekeeping: a spreadsheet created by hand opens on an empty "Sheet1",
     // and our tabs get appended AFTER it - so the doc looks empty on open even
