@@ -29,6 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
+const { execFileSync } = require('child_process');
 
 const PIPE_DIR = __dirname;
 const STATE_PATH = path.join(PIPE_DIR, 'pipeline-state.json');
@@ -91,7 +92,11 @@ const SKIP_THEMES = [
   ['automated / no-reply traffic',          /otp|one.time code|verification code|cardpointe|automated/],
   ['results conference / director meeting', /results (conference|meeting|review)|director|conference (already|with)|calendly/],
   ['schedule question (possible `lookup`)', /what time|when is|which day|already (booked|scheduled)|confirm(ing|ation)? of existing|confirming (the )?format|existing (mon|tue|wed|thu|fri|schedule|booking)/],
-  ['cancellation (should be `cancel`)',     /cancel/],
+  // Affirmative cancellations only. The classifier routinely writes negations
+  // like "no session to book, move, or cancel", and a bare /cancel/ counted
+  // those as MISSED cancellations - 8 of 11 were that inversion, which is the
+  // exact error this theme exists to catch.
+  ['cancellation (should be `cancel`)',     /cancellation request|wants? to cancel|cancel(l)?ing (the|next|her|his|their|today)|cancel(l)?ation notice/],
   ['billing / tuition',                     /tuition|billing|payment|invoice|pricing|rate|charge|refund/],
   ['teacher-originated',                    /teacher-originated|tutor asking|staff-to-teacher|own (schedule|hours|session)/],
   ['voicemail / phone tag',                 /voicemail|phone tag|call(ed)? back|left a message/],
@@ -181,6 +186,32 @@ async function writeTab(sheets, spreadsheetId, existing, title, rows) {
   const WRONG = new Set(['wrong-category', 'wrong-tutor', 'bot-blocked-staff-acted', 'still-booked', 'restore-not-done']);
   const wrong = results.filter(x => WRONG.has(x.verdict));
 
+  // ── job health ─────────────────────────────────────────────────────────────
+  // A failed scheduled job is otherwise SILENT. The reconcile posts to Slack only
+  // when it SUCCEEDS, so a failure looks exactly like a quiet day - and its log is
+  // overwritten on the next run, so the evidence is gone too. `Reconcile Saturday
+  // noon` failed on 2026-08-01 (0xC000013A, process terminated) and nobody knew;
+  // staff simply got no report that day.
+  //
+  // Only a non-zero exit is FLAGGED in Slack. Every job's last run goes to the
+  // sheet regardless: the cadences differ (15 min / daily / weekly / monthly) and
+  // one staleness threshold across all of them would be guesswork.
+  let jobs = [];
+  try {
+    const ps = "Get-ScheduledTask | Where-Object { $_.TaskName -match 'ClaudeScheduling|^Reconcile |^HLC-' } | " +
+      "ForEach-Object { $i = $_ | Get-ScheduledTaskInfo; " +
+      "'{0}|{1}|{2}' -f $_.TaskName, $i.LastTaskResult, $(if ($i.LastRunTime.Year -gt 2000) { $i.LastRunTime.ToString('o') } else { '' }) }";
+    jobs = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+      { encoding: 'utf8', timeout: 60000 })
+      .split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      .map(l => { const [name, result, last] = l.split('|');
+        return { name, result: Number(result), last,
+                 hrs: last ? +((Date.now() - new Date(last)) / 3600000).toFixed(1) : null }; });
+  } catch (e) {
+    console.error(`[daily-review] job health unavailable (${e.message}) - continuing.`);
+  }
+  const failedJobs = jobs.filter(j => Number.isFinite(j.result) && j.result !== 0);
+
   // stuck
   const errors = recs.filter(r => r.status === 'error');
   const stuckNew = recs.filter(r => r.status === 'new');
@@ -252,7 +283,11 @@ async function writeTab(sheets, spreadsheetId, existing, title, rows) {
     await writeTab(sheets, sheetId, existing, 'Attention',
       [['Status', 'Contact', 'Detail'],
         ...errors.map(r => ['error', r.contactName || '', r.lastError || '']),
-        ...stuckNew.map(r => ['stuck at new', r.contactName || '', `first seen ${nice(r.firstSeenISO)}`])]);
+        ...stuckNew.map(r => ['stuck at new', r.contactName || '', `first seen ${nice(r.firstSeenISO)}`]),
+        ...(jobs.length ? [[], ['SCHEDULED JOBS', 'last result', 'last run']] : []),
+        ...jobs.slice().sort((a, b) => a.name.localeCompare(b.name))
+          .map(j => [j.result === 0 ? 'job ok' : 'JOB FAILED', j.name,
+            `${j.result === 0 ? 'exit 0' : 'exit ' + j.result} - ${j.last ? nice(j.last) : 'never run'}${j.hrs != null ? ` (${j.hrs}h ago)` : ''}`])]);
 
     // Housekeeping: a spreadsheet created by hand opens on an empty "Sheet1",
     // and our tabs get appended AFTER it - so the doc looks empty on open even
@@ -289,6 +324,7 @@ async function writeTab(sheets, spreadsheetId, existing, title, rows) {
   if (staffNotes.length) flags.push(`:speech_balloon: ${staffNotes.length} staff note(s)`);
   if (errors.length) flags.push(`:x: ${errors.length} in error`);
   if (stuckNew.length) flags.push(`:hourglass: ${stuckNew.length} stuck at new`);
+  if (failedJobs.length) flags.push(`:rotating_light: ${failedJobs.length} job(s) failed: ${failedJobs.map(j => j.name).join(', ')}`);
   if (flags.length) L.push(flags.join(' · '));
   if (sheetUrl) L.push(`<${sheetUrl}|View full review>`);
   else if (sheetError) L.push(`_(detail sheet unavailable: ${sheetError})_`);

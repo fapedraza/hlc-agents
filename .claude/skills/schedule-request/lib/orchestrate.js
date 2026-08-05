@@ -632,7 +632,12 @@ async function orchestrateOne({
   const subjectNote = effSubj.inherited
     ? null
     : effSubj.fellBack
-      ? `Couldn't parse a subject from the request ("${(payload.subject || '').slice(0, 60)}") — used the student's usual service (${subjectForMap}); tutor chosen from this student's history, so confirm the subject only if it matters.`
+      // Do NOT claim the tutor came from history unless it did. On 2026-08-04 this
+      // told staff "tutor chosen from this student's history" for Amy Kot, where
+      // the student did not resolve at all and the tutor came from blind subject
+      // discovery. Mariah's reply: "Xiaoying does not teach this subject."
+      ? `Couldn't parse a subject from the request ("${(payload.subject || '').slice(0, 60)}") — used ${resolution.bestMatch ? `the student's usual service (${subjectForMap})` : `"${subjectForMap}"`}; ` +
+        `${resolution.bestMatch ? 'confirm the subject only if it matters.' : 'the student could not be matched, so the tutor is a subject guess — check it.'}`
       : subjectResolved.note;
   // When the subject is a guess, a qualification MISS proves nothing — the tutor
   // was checked against a label the customer never said. Blocking on it produced

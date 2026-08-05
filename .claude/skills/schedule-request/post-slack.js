@@ -158,7 +158,12 @@ function buildSlackText(rec, threadEntry) {
   lines.push(`${emoji} *${studentName}* — ${rec.proposed?.subject || '?'} · ${dateNice} ${time}`.trimEnd());
   if (rec.mode === 'backtest') lines.push('_(back-test mode)_');
   // Uncertain student match is decision-critical — surface it.
-  if (rec.student?.confidence && rec.student.confidence !== 'high') {
+  if (!rec.student) {
+    // No student resolved at all. This used to print nothing, because the warning
+    // below keys on student.confidence — so a blind subject-discovery pick was
+    // presented with the same confidence as a history-anchored one.
+    lines.push(`_⚠️ no matching student in LCOS — nothing here is anchored to their history. Likely a new or prospective family._`);
+  } else if (rec.student.confidence && rec.student.confidence !== 'high') {
     lines.push(`_⚠️ student match: ${rec.student.confidence} confidence — confirm this is the right student_`);
   }
   lines.push('');
