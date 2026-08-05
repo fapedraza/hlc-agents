@@ -20,6 +20,7 @@ const { loadQualsIndex, buildCandidateList } = require('./discover-tutors');
 const { resolveSubject, serviceMatchesAny } = require('./subject-map');
 const { summarizeStudentHistory, buildHistoryCandidates, CANCEL_STATUSES } = require('./student-history');
 const { isNonTutor } = require('./non-tutors');
+const tutorRules = require('./tutor-rules');
 const { computeOpenSlots, fmt12 } = require('./slots');
 
 const SKILL_DIR = path.join(__dirname, '..');
@@ -760,6 +761,38 @@ async function orchestrateOne({
           `evaluating ${added.length} discovered${hits.length > added.length ? ` (capped; ${hits.length - added.length} more in index)` : ''}`);
     }
   }
+  // ── staff rules, applied BEFORE any tutor is evaluated ──────────────────────
+  // A `never` rule in A+ Student Notes is an explicit instruction and outranks
+  // every other signal INCLUDING history: Morgan Lan's most-used tutor is
+  // precisely the one her note excludes (16 sessions were booked against a rule
+  // dated 8/1/2026). Filtering here also avoids paying for A+ page loads on a
+  // tutor we could never propose.
+  if (studentFullName && candidateNames.length) {
+    const kept = [];
+    for (const n of candidateNames) {
+      const hit = tutorRules.excludedBy(studentFullName, n, effSubj.subject);
+      if (hit) {
+        const scope = hit.scope ? ` for ${hit.scope}` : '';
+        log(`    [rule] dropped ${n} — A+ student note says "No ${hit.name}${scope}"`);
+        tutorNote.push(`${shortTutorName(n)} is excluded for this student by an A+ note ("No ${hit.name}${scope}").`);
+      } else kept.push(n);
+    }
+    candidateNames = kept;
+  }
+
+  // Discovery reads a periodically-scraped index; the roster inside the shared
+  // A+ cache refreshes every pass. Cross-check, so a stale index can never
+  // propose someone who has left. On 2026-08-04 the index was 67 days old and
+  // still offered Felix, Hana and Jackson - all three flagged as gone by Mariah.
+  if (candidateSource === 'discovery' && candidateNames.length) {
+    const kept = candidateNames.filter(n => {
+      const ok = tutorRules.onRoster(n);
+      if (!ok) log(`    [roster] dropped ${n} — not on the current A+ roster`);
+      return ok;
+    });
+    candidateNames = kept;
+  }
+
   log(`    [candidates] source=${candidateSource || 'none'}: ${candidateNames.join(', ') || '(none)'}`);
 
   // Step 2: per-candidate-tutor live A+ lookups (quals + schedule), then eval.
@@ -943,10 +976,23 @@ async function orchestrateOne({
     if (preferredTutor) log(`    [reschedule] carry-over tutor: ${preferredTutor}`);
   }
 
-  const rankUsable = t =>
-    (t.fromHistory ? 5000 + (t.historyScore || 0) : 0) +
-    (t.isStudentsTutor ? 1000 : 0) + (!t.discovered ? 100 : 0) -
-    (t.servicesOfferedCount || 0) * 0.1;
+  // Mariah, 2026-08-04: "we try to prioritize LC teachers for LC students, and
+  // EP/ST teachers for EP/ST students, even if they are able to teach both."
+  // PRIORITIZE, not restrict - so category ranks and never excludes. 29% of
+  // recommendations already end in BLOCKED, and turning "an imperfect tutor"
+  // into "no tutor" would be a worse answer for staff, not a safer one.
+  // Weights: history still dominates; category (600) sits under isStudentsTutor
+  // (1000) so a student's own tutor is never demoted, but well above the
+  // discovery tie-breakers - which is where all three wrong-category picks came
+  // from.
+  const rankUsable = t => {
+    const name = (t.teacher && t.teacher.lastFirst) || t.candidate || '';
+    return (t.fromHistory ? 5000 + (t.historyScore || 0) : 0) +
+      (t.isStudentsTutor ? 1000 : 0) + (!t.discovered ? 100 : 0) +
+      tutorRules.categoryFit(name, resolution.bestMatch) * 600 +
+      (tutorRules.preferredFor(studentFullName, name) ? 800 : 0) -
+      (t.servicesOfferedCount || 0) * 0.1;
+  };
 
   // Restore pool: cancelled sessions on the requested date, but only when the
   // student has nothing ACTIVE that day (else this is an already-booked case, not

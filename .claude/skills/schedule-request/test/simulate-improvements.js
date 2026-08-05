@@ -49,14 +49,24 @@ function sameTutor(a, b) {
 const roster = notes.teachers.map(t => t.teacher);
 const onRoster = name => roster.some(r => sameTutor(r, name));
 
-// teacher -> categories. A+ Teacher Type first, statistical derivation as fallback.
-const TYPE_TO_CAT = { 'LC': 'LC', 'EP/ST Math & Science': 'EP', 'EP/ST Verbal': 'EP' };
-const apType = new Map(notes.teachers.map(t => [norm(t.teacher), t.type]));
+// Category comes from lib/tutor-rules.js — the SAME module the runtime ranks on.
+// This used to carry its own 3-way LC/EP/ST map, which drifted from reality: it
+// flagged MJ Montano's recommendation as wrong-category when staff had in fact
+// used that very tutor. EP and ST share one pool ("EP/ST Math & Science",
+// "EP/ST Verbal", "EP/ST All" are all one group, per Mariah 2026-08-04), so a
+// simulation with a different model than the bot tests the wrong thing.
+const rules = require('../lib/tutor-rules');
+const SERVICE_BY_CAT = { LC: 'L1', EP: 'S1', ST: 'ST' };   // seed category -> an LCOS code
 function categoriesFor(name) {
-  for (const [k, v] of apType) if (sameTutor(k, name) && TYPE_TO_CAT[v]) return { cats: [TYPE_TO_CAT[v]], src: 'A+ Teacher Type' };
-  for (const t of cats.teachers) if (sameTutor(t.teacher, name) && t.teaches?.length) return { cats: t.teaches, src: 'derived' };
+  const pools = rules.poolsForTeacher(name);
+  if (pools && pools.length) return { cats: pools, src: 'A+ Teacher Type' };
+  if (pools && !pools.length) return { cats: null, src: 'admin (not auto-assignable)' };
+  for (const t of cats.teachers) if (sameTutor(t.teacher, name) && t.teaches?.length) {
+    return { cats: t.teaches.map(c => (c === 'LC' ? 'LC' : 'EPST')), src: 'derived' };
+  }
   return { cats: null, src: 'unknown' };
 }
+
 const studentCat = new Map(seedStu.students.map(s => [norm(s.student), s.category]));
 const noteFor = name => (notes.students.find(s => sameTutor(s.student, name)) || {}).note || '';
 
@@ -68,7 +78,8 @@ for (const r of backfill.results) {
 
   if (!onRoster(r.recommendedTutor)) flags.push({ rule: 'DEPARTED', detail: 'not on the current A+ roster' });
 
-  const sc = studentCat.get(norm(r.student));
+  const rawCat = studentCat.get(norm(r.student));
+  const sc = rawCat ? rules.SERVICE_TO_POOL[SERVICE_BY_CAT[rawCat] || ''] || null : null;
   const { cats: tc, src } = categoriesFor(r.recommendedTutor);
   if (sc && tc && !tc.includes(sc)) {
     flags.push({ rule: 'CATEGORY', detail: `${r.student} is ${sc}; ${r.recommendedTutor} teaches ${tc.join('+')} (${src})` });
