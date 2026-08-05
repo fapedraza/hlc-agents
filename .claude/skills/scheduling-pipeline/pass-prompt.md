@@ -69,11 +69,18 @@ Never put scheduling facts in `courtesy` - it is the closing pleasantry only.
 - If a thread shows `inQueue: false` or has no messages, run `pipeline-run.js skip`
   with reason `no-longer-in-queue`.
 - If it IS a schedulable request, write a payload JSON file under
-  `.claude/skills/scheduling-pipeline/payloads/` named by the thread hash, then run:
+  `.claude/skills/scheduling-pipeline/payloads/` named EXACTLY `<hash>.json`, then run:
 
       node .claude/skills/scheduling-pipeline/pipeline-run.js process <payload file>
 
   Use the customer's own words for the subject, and prefer the student's current tutor.
+
+  **A reopened conversation keeps its hash, so that file usually already exists.
+  OVERWRITE it.** Do not invent a variant name and do not stop to ask: `process`
+  reads the hash from inside the file, so the filename carries no meaning, and the
+  superseded payload is of no value once the family has sent a newer message. On
+  2026-08-05 this cost a real thread a pass - the payload existed, a v2 name was
+  attempted instead, and the pass halted with nothing recommended.
 - If it is NOT schedulable, run:
 
       node .claude/skills/scheduling-pipeline/pipeline-run.js skip <hash> "<short reason>"
