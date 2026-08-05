@@ -8,6 +8,13 @@ set LOGFILE=%USERPROFILE%\.claude\logs\scheduling-daily-review.log
 if not exist "%USERPROFILE%\.claude\logs" mkdir "%USERPROFILE%\.claude\logs"
 
 echo ===== %date% %time% daily review start ===== >> "%LOGFILE%"
+REM Full re-grade of every recommendation, written to backfill-report.json.
+REM This must be the READ-ONLY form: --apply skips already-settled records before
+REM evaluating, so writing the report from the 15-minute pass replaced the whole
+REM 42-record baseline with the handful it happened to re-check. The pass still
+REM records outcomes; only this writes the report.
+node .claude\skills\scheduling-pipeline\backfill-outcomes.js --json .claude\skills\scheduling-pipeline\backfill-report.json >> "%LOGFILE%" 2>&1
+
 node .claude\skills\scheduling-pipeline\daily-review.js --days 7 >> "%LOGFILE%" 2>&1
 
 REM Refresh the tutor-services index used by subject discovery. Self-guarded to

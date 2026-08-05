@@ -21,6 +21,13 @@ REM The classifier prompt lives in pass-prompt.md rather than inline here. It is
 REM the only LLM step in the pipeline and it is a spec, so it belongs somewhere
 REM reviewable and diffable - a shell string is not that. claude -p reads it from
 REM stdin, which also supersedes the old < NUL guard against a blocking stdin.
+REM Rebuild the rules snapshot the recommender depends on. student-notes.json
+REM carries the A+ Teacher Types (category matching), the per-student prefer/never
+REM rules, and the current roster used to drop departed tutors. It reads the shared
+REM A+ cache - no browser, ~1s - and nothing else regenerates it, so without this a
+REM new "No X" note or Teacher Type change would never reach the bot.
+node .claude\skills\schedule-request\extract-student-notes.js >> "%LOGFILE%" 2>&1
+
 echo ===== %date% %time% pass start ===== >> "%LOGFILE%"
 type "%PROMPT%" | claude -p --settings "%SETTINGS%" >> "%LOGFILE%" 2>&1
 REM Close the loop on past recommendations. Staff answer the FAMILY in Text
