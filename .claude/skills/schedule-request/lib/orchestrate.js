@@ -1016,8 +1016,17 @@ async function orchestrateOne({
   // time, require a cancelled session at that time.
   const restorable = (() => {
     if (isLookup || isCancel || isProgram || !payload.proposedDate) return [];
+    // A reschedule/makeup carries a SOURCE session being moved; a cancelled
+    // session that happens to sit on the target date is coincidence, not the
+    // thing the family wants back. Replaying Lydia's reschedule showed RESTORE
+    // hijacking it and proposing the wrong tutor entirely. "Put us back on"
+    // arrives as new-session (Morgan Lan, Max Mark - both graded correct).
+    if (isReschedule) return [];
     if (studentSessionsOn(payload.proposedDate).length) return [];
-    const pool = studentCancelledSessionsOn(payload.proposedDate);
+    const pool = studentCancelledSessionsOn(payload.proposedDate)
+      // Never propose reinstating a session with someone who has left: the
+      // Susie replay offered to restore a slot with Goldroot Hana, departed.
+      .filter(s => !s.tutor || tutorRules.onRoster(s.tutor));
     const wantHHMM = payload.proposedTime ? toHHMM24(payload.proposedTime) : null;
     return wantHHMM ? pool.filter(s => s.start === wantHHMM) : pool;
   })();
@@ -1099,6 +1108,20 @@ async function orchestrateOne({
       reason: `${studentFirstName(resolution.bestMatch)} already has ${restorable.length} cancelled ` +
         `session(s) on ${payload.proposedDate}${tutors.length ? ` with ${tutors.join(', ')}` : ''} — ` +
         `reinstate the existing slot(s) rather than booking something new.`,
+    };
+  } else if (noExactTime && studentSessionsOn(payload.proposedDate).length) {
+    // The family named a day with no time — and they already HAVE a session that
+    // day. Staff answer this by pointing at the booking ("You do indeed have
+    // sessions today", Anica 8/4), not by hunting for open slots that all clash
+    // with it and giving up. Replay caught the old behaviour twice: Melia and
+    // Ellen both came back BLOCKED for days they were already booked.
+    const own = studentSessionsOn(payload.proposedDate);
+    recommended = {
+      action: 'ALREADY_BOOKED',
+      tutor: own[0].tutor || null,
+      existing: { start: own[0].start, duration: own[0].duration },
+      reason: `${studentFirstName(resolution.bestMatch)} already has ${own.length} session(s) on ` +
+        `${payload.proposedDate}: ${own.map(s => `${fmt12(s.start)}${s.tutor ? ' w/ ' + tutorDisplayName(s.tutor) : ''}`).join(', ')} — confirm rather than book anew.`,
     };
   } else if (noExactTime) {
     // #2 No exact time (family gave a range / none) → offer the preferred or
