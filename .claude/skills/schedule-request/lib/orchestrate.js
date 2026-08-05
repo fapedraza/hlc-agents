@@ -219,7 +219,9 @@ function bookedIntervalsOnDate(bookingRows, tutorLastFirst, isoDate) {
     .map(b => {
       const start = toHHMM24((b['Start Time'] || '').trim());
       const dur = durationToMinutes((b['Duration'] || '').trim()) || 60;
-      return { start, end: addMinutes(start, dur) };
+      // Service travels with the interval so slot-offering can tell a floor block
+      // (joinable, up to 4) from a 1:1 session (blocking).
+      return { start, end: addMinutes(start, dur), service: (b['Service'] || '').trim() };
     })
     .filter(iv => iv.start);
 }
@@ -957,6 +959,10 @@ async function orchestrateOne({
     const slots = tEval && tEval.eval ? computeOpenSlots({
       dayHours: tEval.eval.effectiveHours || tEval.eval.dayHours, busyIntervals: tEval.eval.dayBusy || [],
       durationMin: tEval.eval.durationMin, window: payload.timeWindow || null, max: 4,
+      // A request carries no service of its own, so use what this student is
+      // actually booked for. A floor student may join a floor block; everyone
+      // else still needs the tutor to themselves.
+      forService: history.modalService || null,
     }) : [];
     if (!slots.length) return null;
     return {

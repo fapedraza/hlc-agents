@@ -41,7 +41,26 @@ function fmt12(hhmm) {
  *   max            cap on returned slots (default 4)
  * Returns [{ start, end, label }] where label = "10:30am–11:30am".
  */
-function computeOpenSlots({ dayHours, busyIntervals = [], durationMin = 60, window = null, granularityMin = 30, max = 4 }) {
+/** Floor services seat several students with one tutor; everything else is 1:1. */
+const isFloorService = svc => /floor/i.test(svc || '');
+/** Mariah's cap, and exactly what the data shows: floor never exceeds 4 at once. */
+const FLOOR_CAPACITY = 4;
+
+/**
+ * @param {string} forService  the service being booked. When it is a FLOOR
+ *   service, overlapping floor bookings consume a seat rather than blocking the
+ *   slot outright — which is how staff actually schedule. Measured over six
+ *   months: Verbal Floor shares a tutor 58% of the time and Math Floor 31%,
+ *   against 2% for Learning Center 1:1 and 1% for Exam Prep Math, and the
+ *   maximum ever seen is 4. Treating every booking as blocking is why the bot
+ *   offered Leta 6:30pm when staff put the student at 10am beside another.
+ *
+ *   A non-floor request still blocks on ANY overlap, and a floor request still
+ *   blocks on an overlapping NON-floor session. Without both of those the bot
+ *   would start generating the "1:1 Double Booked" discrepancies the daily
+ *   reconcile exists to catch.
+ */
+function computeOpenSlots({ dayHours, busyIntervals = [], durationMin = 60, window = null, granularityMin = 30, max = 4, forService = null }) {
   if (!dayHours || dayHours.off) return [];
   let ws = hhmmToMin(dayHours.start), we = hhmmToMin(dayHours.end);
   if (ws == null || we == null) return [];
@@ -50,20 +69,26 @@ function computeOpenSlots({ dayHours, busyIntervals = [], durationMin = 60, wind
     if (wsW != null) ws = Math.max(ws, wsW);
     if (weW != null) we = Math.min(we, weW);
   }
+  const wantFloor = isFloorService(forService);
   const busy = busyIntervals
-    .map(b => [hhmmToMin(b.start), hhmmToMin(b.end)])
-    .filter(([s, e]) => s != null && e != null)
-    .sort((a, b) => a[0] - b[0]);
+    .map(b => ({ s: hhmmToMin(b.start), e: hhmmToMin(b.end), floor: isFloorService(b.service) }))
+    .filter(b => b.s != null && b.e != null)
+    .sort((a, b) => a.s - b.s);
 
   const out = [];
   // last start must leave room for the full session within working hours
   for (let s = ws; s + durationMin <= we; s += granularityMin) {
     const e = s + durationMin;
-    const clash = busy.some(([bs, be]) => s < be && bs < e);
+    const over = busy.filter(b => s < b.e && b.s < e);
+    // A floor request may join an existing floor block until it is full; anything
+    // else (or any non-floor session in the way) still blocks.
+    const clash = wantFloor
+      ? over.some(b => !b.floor) || over.length >= FLOOR_CAPACITY
+      : over.length > 0;
     if (!clash) out.push({ start: minToHHMM(s), end: minToHHMM(e), label: `${fmt12(minToHHMM(s))}–${fmt12(minToHHMM(e))}` });
     if (out.length >= max) break;
   }
   return out;
 }
 
-module.exports = { computeOpenSlots, hhmmToMin, minToHHMM, fmt12 };
+module.exports = { computeOpenSlots, hhmmToMin, minToHHMM, fmt12, isFloorService, FLOOR_CAPACITY };

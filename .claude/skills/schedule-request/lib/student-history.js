@@ -68,6 +68,7 @@ function summarizeStudentHistory(rows, studentName, now = new Date()) {
 
   const tutors = new Map();
   const durCount = new Map();
+  const svcCount = new Map();   // what this student is actually booked FOR
   for (const r of mine) {
     const tutor = (r['Teacher'] || '').trim();
     if (!tutor || isNonTutor(tutor)) continue;
@@ -84,6 +85,8 @@ function summarizeStudentHistory(rows, studentName, now = new Date()) {
     if (cancelled) { t.cancelled++; continue; }   // counted, but not part of the pattern
     t.active++;
     if (dur) { t.durations.set(dur, (t.durations.get(dur) || 0) + 1); durCount.set(dur, (durCount.get(dur) || 0) + 1); }
+    const svc = (r['Service'] || '').trim();
+    if (svc && !cancelled) svcCount.set(svc, (svcCount.get(svc) || 0) + 1);
     if (day) {
       t.days.add(day);
       if (hhmm) { const k = `${day} ${hhmm}`; t.slots.set(k, (t.slots.get(k) || 0) + 1); }
@@ -111,6 +114,10 @@ function summarizeStudentHistory(rows, studentName, now = new Date()) {
     .sort((a, b) => b.activeSessions - a.activeSessions);
 
   const modalDuration = [...durCount.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d)[0] || null;
+  // The service this student is usually booked for. Used to decide whether a new
+  // session may JOIN a floor block or needs the tutor to itself — a request has
+  // no service of its own, and the student's own pattern is the best predictor.
+  const modalService = [...svcCount.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s)[0] || null;
 
   return {
     student: studentName,
@@ -119,6 +126,7 @@ function summarizeStudentHistory(rows, studentName, now = new Date()) {
     todayTs,
     primaryTutor: tutorList[0] ? tutorList[0].tutor : null,
     modalDuration,
+    modalService,
     tutors: tutorList,
   };
 }
