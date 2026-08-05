@@ -30,7 +30,7 @@ const SKILL_DIR = __dirname;
 const DEFAULT_OUT = path.join(SKILL_DIR, 'aplus-quals.json');
 
 function parseArgs(argv) {
-  const a = { limit: null, out: DEFAULT_OUT, filter: null };
+  const a = { limit: null, out: DEFAULT_OUT, filter: null, maxAgeDays: null };
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
     if (v === '--limit')        a.limit = parseInt(argv[++i], 10);
@@ -38,6 +38,7 @@ function parseArgs(argv) {
     else if (v === '--out')     a.out = argv[++i];
     else if (v.startsWith('--out='))   a.out = v.slice(6);
     else if (v === '--filter')  a.filter = new RegExp(argv[++i], 'i');
+    else if (v === '--max-age-days') a.maxAgeDays = parseFloat(argv[++i]);
     else if (v.startsWith('--filter=')) a.filter = new RegExp(v.slice(9), 'i');
   }
   return a;
@@ -49,6 +50,23 @@ function parseArgs(argv) {
 
 (async () => {
   const args = parseArgs(process.argv.slice(2));
+
+  // Self-guard so a caller can run this unconditionally on a schedule. The scrape
+  // walks one A+ page per teacher and took 792s on 2026-08-05, so it must not be
+  // on the 15-minute pass. Services change rarely; DEPARTURES are already handled
+  // at recommendation time by the roster cross-check in lib/orchestrate.js, so the
+  // only thing this refresh is really racing is a NEW HIRE being undiscoverable.
+  // Weekly is the right cadence for that.
+  if (args.maxAgeDays != null) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(args.out, 'utf8'));
+      const ageDays = (Date.now() - new Date(prev.extractedAt)) / 86400000;
+      if (Number.isFinite(ageDays) && ageDays < args.maxAgeDays) {
+        console.error(`[quals] index is ${ageDays.toFixed(1)}d old (< ${args.maxAgeDays}d) — skipping refresh.`);
+        return;
+      }
+    } catch { /* unreadable or absent = refresh */ }
+  }
   const env = readEnv();
   const t0 = Date.now();
 

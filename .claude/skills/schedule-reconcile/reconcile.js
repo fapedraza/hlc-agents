@@ -433,10 +433,48 @@ for (const [key, sess] of Object.entries(byStaffDay)) {
   }
 }
 
+// ── Tutor rule violations ───────────────────────────────────────────────────
+// Staff record hard exclusions in the A+ Student Notes field ("No Leta",
+// "No Leta for math"). Nothing was checking whether the schedule honours them.
+// On 2026-08-04 Morgan Lan had 16 sessions booked with the exact tutor a note
+// dated 8/1/2026 excludes - three days after it was written.
+//
+// Grouped per student+tutor rather than per session: the same standing rule
+// broken on six days is one thing to fix, not six. Rules naming staff who have
+// left are dropped by lib/tutor-rules (A+ notes cannot be edited, so they
+// accumulate - 16 of 24 parsed rules are stale).
+try {
+  const rules = require(path.join(__dirname, '..', 'schedule-request', 'lib', 'tutor-rules.js'));
+  const hits = new Map();
+  for (const s of aplusSessions) {
+    if (!s.isActive || !s.studentName || !s.staff) continue;
+    if (!dateSet.has(s.date)) continue;
+    const hit = rules.excludedBy(s.studentName, s.staff, s.service);
+    if (!hit) continue;
+    const key = `${s.studentName}|${s.staff}|${hit.name}|${hit.scope || ''}`;
+    if (!hits.has(key)) hits.set(key, { s, hit, dates: new Set() });
+    hits.get(key).dates.add(s.date);
+  }
+  for (const { s, hit, dates } of hits.values()) {
+    const days = [...dates].sort();
+    const scope = hit.scope ? ` for ${hit.scope}` : '';
+    discrepancies.push({
+      type: 'Tutor Rule Violation',
+      student: s.studentName,
+      date: days[0],
+      lcos_detail: `A+ student note: "No ${hit.name}${scope}"`,
+      aplus_detail: `booked with ${s.staff} on ${days.length} day(s): ${days.join(', ')}`,
+      lcos_mins: 0, aplus_mins: 0,
+    });
+  }
+} catch (e) {
+  console.error(`(tutor-rule check skipped: ${e.message})`);
+}
+
 const typePriority = {
   'Missing in A+': 1, 'Missing in LCOS': 2,
   'Not Cancelled in A+': 3, 'Not Cancelled in LCOS': 4,
-  'Schedule Mismatch': 5, 'Double Booked': 6, 'Session/Retest Overlap': 7, 'Tutor Overloaded': 8, '1:1 Double Booked': 9
+  'Schedule Mismatch': 5, 'Double Booked': 6, 'Session/Retest Overlap': 7, 'Tutor Overloaded': 8, '1:1 Double Booked': 9, 'Tutor Rule Violation': 10
 };
 discrepancies.sort((a,b) =>
   a.date.localeCompare(b.date) ||

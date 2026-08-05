@@ -82,6 +82,7 @@ const TYPE_COLORS = {
   'Session/Retest Overlap': { red: 1.0, green: 0.804, blue: 0.824 }, // #ffcdd2 — red
   'Tutor Overloaded': { red: 1.0, green: 0.878, blue: 0.698 },       // #ffe0b2 — amber
   '1:1 Double Booked':      { red: 1.0, green: 0.922, blue: 0.933 }, // #ffebee — red
+  'Tutor Rule Violation':   { red: 0.929, green: 0.906, blue: 0.965 }, // #ede7f6 — violet
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -252,7 +253,7 @@ function buildDashboard(recon, sid) {
     ]});
     r++;
 
-    const typeOrder = ['Missing in A+', 'Missing in LCOS', 'Not Cancelled in A+', 'Not Cancelled in LCOS', 'Schedule Mismatch', 'Double Booked', 'Session/Retest Overlap', 'Tutor Overloaded', '1:1 Double Booked'];
+    const typeOrder = ['Missing in A+', 'Missing in LCOS', 'Not Cancelled in A+', 'Not Cancelled in LCOS', 'Schedule Mismatch', 'Double Booked', 'Session/Retest Overlap', 'Tutor Overloaded', '1:1 Double Booked', 'Tutor Rule Violation'];
     for (const t of typeOrder) {
       if (!typeCountsObj[t]) continue;
       const bg = TYPE_COLORS[t] || C.YELLOW_BG;

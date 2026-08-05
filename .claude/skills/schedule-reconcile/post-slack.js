@@ -53,7 +53,7 @@ if (stats.discrepancies === 0) {
     `:warning: *Schedule Reconciliation — Issaquah — ${dateRange}*`,
     `${stats.discrepancies} discrepancies need review (${stats.matched}/${stats.lcosActive} matched).`,
   ];
-  const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded','1:1 Double Booked'];
+  const typeOrder = ['Missing in A+','Missing in LCOS','Not Cancelled in A+','Not Cancelled in LCOS','Schedule Mismatch','Double Booked','Session/Retest Overlap','Tutor Overloaded','1:1 Double Booked','Tutor Rule Violation'];
   for (const t of typeOrder) {
     if (typeCounts[t]) lines.push(`• *${t}:* ${typeCounts[t]}`);
   }
