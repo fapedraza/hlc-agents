@@ -22,7 +22,14 @@ function readEnv(p) {
   return out;
 }
 
-const [,, reconPath, channelArg] = process.argv;
+// --dry-run prints the message instead of sending it. Its sibling in
+// schedule-request already had this; without it the only way to check what the
+// daily reconcile will say was to post it to staff. Note the channel is
+// POSITIONAL, so "--dry-run" would otherwise be read as a channel id and fail
+// with channel_not_found.
+const argv = process.argv.slice(2).filter(a => a !== '--dry-run');
+const DRY_RUN = process.argv.includes('--dry-run');
+const [reconPath, channelArg] = argv;
 if (!reconPath) {
   console.error('Usage: node post-slack.js <reconciliation.json> [channel-id]');
   process.exit(1);
@@ -59,6 +66,12 @@ if (stats.discrepancies === 0) {
   }
   if (sheetUrl) lines.push(`<${sheetUrl}|View full report>`);
   text = lines.join('\n');
+}
+
+if (DRY_RUN) {
+  console.log('=== DRY RUN — reconcile Slack message preview ===');
+  console.log(text);
+  process.exit(0);
 }
 
 const body = JSON.stringify({ channel, text, unfurl_links: false, unfurl_media: false });
