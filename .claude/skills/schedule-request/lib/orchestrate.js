@@ -780,11 +780,16 @@ async function orchestrateOne({
     candidateNames = kept;
   }
 
-  // Discovery reads a periodically-scraped index; the roster inside the shared
-  // A+ cache refreshes every pass. Cross-check, so a stale index can never
-  // propose someone who has left. On 2026-08-04 the index was 67 days old and
-  // still offered Felix, Hana and Jackson - all three flagged as gone by Mariah.
-  if (candidateSource === 'discovery' && candidateNames.length) {
+  // Drop candidates who are no longer on the A+ roster, whatever the source.
+  //
+  // Discovery reads a periodically-scraped index. HISTORY is the bigger surface:
+  // 144 students have a departed tutor in their session history, and for 7
+  // currently-enrolled students the most-used tutor has left outright (Zoe Cable
+  // has 27 sessions with a tutor who is gone). The eval step DOES catch these -
+  // they come back "NOT FOUND in A+ roster" - so this is not a correctness fix;
+  // it stops us paying for a live A+ page load per departed name first. Zoe's
+  // request wasted 2 of 8 lookups. The NOT FOUND path stays as the backstop.
+  if (candidateNames.length) {
     const kept = candidateNames.filter(n => {
       const ok = tutorRules.onRoster(n);
       if (!ok) log(`    [roster] dropped ${n} — not on the current A+ roster`);
