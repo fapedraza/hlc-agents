@@ -430,6 +430,17 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
       textReplyDraft: `Great news — we've put ${student} back on for ${dateForFamily} at ${nice}${recommended.tutor ? ` with ${who}` : ''}. See you then!`,
     };
   }
+  if (recommended.action === 'RETEST_MOVE') {
+    const at = recommended.time ? fmt12(recommended.time) : null;
+    return {
+      lcos: 'No LCOS change — practice tests are A+ bookings under the retest resource, not tutoring sessions.',
+      aplus: `${recommended.sourceDate ? `Remove the ${recommended.sourceDate} retest booking and s` : 'S'}eat ${student} in the ${payload.proposedDate} retest block${at ? ` at ${at}` : ''} (McRetest resource).`,
+      payment: 'No new charge for moving a practice test.',
+      textReplyDraft: recommended.alreadyBooked
+        ? `Hi! ${student} is already set for the practice test on ${dateForFamily}${at ? ` at ${at}` : ''}. See you then!`
+        : `Hi! I've moved ${student}'s practice test to ${dateForFamily}${at ? ` at ${at}` : ''}. See you then! - HLC Issaquah`,
+    };
+  }
   if (recommended.action === 'PROGRAM_OFFER') {
     // #3 Program: propose the full weekly schedule for staff to confirm.
     const sch = recommended.proposedSchedule || [];
@@ -915,6 +926,39 @@ async function orchestrateOne({
         && !CANCELLED.has((r['Session Status'] || '').toLowerCase()))
       .map(r => ({ tutor: (r['Teacher'] || '').trim(), start: toHHMM24((r['Start Time'] || '').trim()), duration: (r['Duration'] || '').trim() }));
   }
+  /**
+   * Retests are proctored practice tests booked under a pseudo-tutor
+   * ("McRetest Retest") that the tutor-selection path deliberately excludes -
+   * which is why Arjun's "move his SAT retest to Friday" got a subject tutor's
+   * teaching slots instead of the Friday test block. These helpers see what the
+   * recommender's candidate machinery cannot.
+   */
+  function studentRetestOn(isoDate, rosterRow = resolution.bestMatch) {
+    if (!isoDate || !bookingAvailable || !rosterRow) return [];
+    const mdy = isoToMDY(isoDate);
+    return bookingRows.filter(r => /retest/i.test((r['Teacher'] || '').trim())
+      && isOwnStudent((r['Student Name'] || '').trim(), rosterRow)
+      && (r['Session Date'] || '').trim() === mdy
+      && !CANCELLED.has((r['Session Status'] || '').toLowerCase()))
+      .map(r => ({ start: toHHMM24((r['Start Time'] || '').trim()), duration: (r['Duration'] || '').trim(), service: (r['Service'] || '').trim() }));
+  }
+  /** The proctored block already running on a date: [{start, count}] by start time. */
+  function retestBlockOn(isoDate) {
+    if (!isoDate || !bookingAvailable) return [];
+    const mdy = isoToMDY(isoDate);
+    const byStart = new Map();
+    for (const r of bookingRows) {
+      if (!/retest/i.test((r['Teacher'] || '').trim())) continue;
+      if ((r['Session Date'] || '').trim() !== mdy) continue;
+      if (CANCELLED.has((r['Session Status'] || '').toLowerCase())) continue;
+      const start = toHHMM24((r['Start Time'] || '').trim());
+      if (!start) continue;
+      byStart.set(start, (byStart.get(start) || 0) + 1);
+    }
+    return [...byStart.entries()].map(([start, count]) => ({ start, count }))
+      .sort((a, b) => a.start.localeCompare(b.start));
+  }
+
   // Resolve a sibling named in a sessions[] entry, memoized. Falls back to the
   // primary student when the entry names nobody or the name doesn't clear the
   // resolution floor - never guesses a different child.
@@ -1042,6 +1086,15 @@ async function orchestrateOne({
   // student has nothing ACTIVE that day (else this is an already-booked case, not
   // a restore) and the request is not itself a cancellation. If the family named a
   // time, require a cancelled session at that time.
+  // A retest ask never selects a tutor: the customer names the test in their own
+  // words, or the session being moved IS a retest booking. Declared here rather
+  // than with the hoisted flags because studentRetestOn reads bookingRows, which
+  // does not exist yet at that point (the same TDZ trap isCancel hit).
+  const isRetestAsk = !backtest && !isLookup && !isCancel && (
+    /retest|practice test|mock (sat|act)|proctor/i.test(payload.subject || '')
+    || (!!payload.fromDate && studentRetestOn(payload.fromDate).length > 0)
+  );
+
   const restorable = (() => {
     if (isLookup || isCancel || isProgram || !payload.proposedDate) return [];
     // A reschedule/makeup carries a SOURCE session being moved; a cancelled
@@ -1141,6 +1194,30 @@ async function orchestrateOne({
       reason: sessions.length
         ? `Cancel ${sessions.length} existing session(s) for ${who.join(' and ')} across ${days.length} day(s) (${days.join(', ')}) — no tutor selection needed.`
         : `No existing (non-cancelled) session found for this ask (${wanted.map(w => w.date).join(', ')}); confirm the date(s) with staff.`,
+    };
+  } else if (isRetestAsk) {
+    // #0a Retest move: the "session" being moved is a proctored test seat, not a
+    // tutor booking. Join the target day's existing block when there is one
+    // (staff moved Arjun "Saturday -> Friday 9:00am" by seating him in the
+    // Friday block); otherwise keep the student's own test time; otherwise leave
+    // the time to staff rather than inventing one.
+    const block = retestBlockOn(payload.proposedDate);
+    const source = payload.fromDate ? studentRetestOn(payload.fromDate) : [];
+    const already = studentRetestOn(payload.proposedDate);
+    const at = already.length ? already[0].start
+      : block.length ? block[0].start
+      : (source.length ? source[0].start : (payload.proposedTime ? toHHMM24(payload.proposedTime) : null));
+    recommended = {
+      action: 'RETEST_MOVE',
+      time: at,
+      sourceDate: payload.fromDate || null,
+      existingBlock: block,
+      alreadyBooked: already.length > 0,
+      reason: already.length
+        ? `${studentFirstName(resolution.bestMatch)} already has a practice test on ${payload.proposedDate} at ${fmt12(already[0].start)} — confirm, don't rebook.`
+        : block.length
+          ? `Seat the practice test in the existing ${payload.proposedDate} block at ${fmt12(block[0].start)} (${block[0].count} student(s) already in it)${payload.fromDate ? `; remove the ${payload.fromDate} booking` : ''}.`
+          : `No proctored block exists on ${payload.proposedDate} yet${at ? ` — propose ${fmt12(at)} (their current test time)` : ' — staff to pick the seat time'}${payload.fromDate ? `, and remove the ${payload.fromDate} booking` : ''}.`,
     };
   } else if (restorable.length) {
     // #0b Restore: the family wants their USUAL slot back, not a new one. Only

@@ -64,7 +64,7 @@ function historyMaxAgeMs(args) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
-  let result;
+  let result = null;
   try {
     // Pull the wide A+ schedule report first → student-history anchor.
     // Cached on disk (default 3h) so the always-on pipeline reuses one pull.
@@ -83,10 +83,78 @@ function historyMaxAgeMs(args) {
     }
     await navStaffList(page, env);
     const teachers = await listTeachers(page);
-    result = await orchestrateOne({
-      payload, page, teachers, roster, csvRows, csvAvailable, historyRows,
-      backtest: args.backtest, log: (m) => console.log(m),
-    });
+
+    // ── multi-session bookings ────────────────────────────────────────────────
+    // A sessions[] ask that ISN'T a cancel gets one full evaluation PER entry —
+    // Amy Kot's "Wed verbal + Fri math" needs a tutor decision for each, and the
+    // single-payload run could only make one. Each entry goes through the same
+    // orchestrateOne; the browser session and per-tutor scrapes are shared via
+    // `caches`, so N sessions cost one login and each tutor is scraped once.
+    // Cancels stay single-call: orchestrateOne already collects the whole
+    // sessions[] scope internally for CANCEL.
+    const wantMulti = Array.isArray(payload.sessions) && payload.sessions.length > 1
+      && !/^(cancel|lookup)$/i.test(payload.requestType || '');
+    if (wantMulti) {
+      const caches = { quals: new Map(), schedule: new Map() };
+      const parts = [];
+      for (const [i, entry] of payload.sessions.entries()) {
+        if (!entry || !entry.date) continue;
+        const sub = {
+          ...payload,
+          sessions: undefined,                       // no scope note on sub-calls
+          student: entry.student || payload.student,
+          proposedDate: entry.date,
+          proposedTime: entry.time || null,
+          sessionLength: entry.length || payload.sessionLength,
+          subject: entry.subject || payload.subject,
+          courtesy: i === 0 ? payload.courtesy : undefined,   // once, not per line
+        };
+        console.log(`
+--- session ${i + 1}/${payload.sessions.length}: ${sub.student || ''} ${sub.proposedDate} ${sub.proposedTime || ''} ---`);
+        const r = await orchestrateOne({
+          payload: sub, page, teachers, roster, csvRows, csvAvailable, historyRows,
+          backtest: args.backtest, caches, log: (m) => console.log(m),
+        });
+        parts.push({
+          student: sub.student, date: sub.proposedDate, time: sub.proposedTime,
+          subject: sub.subject,
+          skipped: r.skipped || null,
+          recommended: r.recommendation ? r.recommendation.recommended : null,
+          note: r.recommendation ? r.recommendation.note : null,
+        });
+        if (!result && r.recommendation) result = r;   // first evaluable part anchors downstream
+      }
+      if (result) {
+        result.recommendation.multi = true;
+        result.recommendation.parts = parts;
+        // One combined family draft, composed from the parts rather than by
+        // concatenating N greeting+signoff drafts.
+        // Parents get "Wed 8/12", never an ISO date — same rule as every other draft.
+        const famDate = iso => {
+          const d = new Date(iso + 'T12:00:00');
+          const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+          return `${dow} ${d.getMonth() + 1}/${d.getDate()}`;
+        };
+        const fmtPart = q => {
+          const rec = q.recommended || {};
+          const t = rec.tutor ? String(rec.tutor).replace(/^([^,]+),\s*([^(]+?)\s*(\(.*)?$/, '$2').trim() : null;
+          const when = `${famDate(q.date)}${q.time ? ' at ' + q.time : ''}`;
+          if (rec.action === 'PROCEED' || rec.action === 'ALREADY_BOOKED') return `${when}${q.subject ? ' — ' + q.subject : ''}${t ? ' with ' + t : ''}`;
+          if (rec.action === 'OFFER_SLOTS') return `${when}${t ? ' — times to confirm with ' + t : ' — times to confirm'}`;
+          return `${when} — staff to confirm`;
+        };
+        const booked = parts.filter(q => q.recommended);
+        result.recommendation.actionPlan = result.recommendation.actionPlan || {};
+        result.recommendation.actionPlan.textReplyDraft =
+          `Hi! Here's what we've set up: ${booked.map(fmtPart).join('; ')}. ` +
+          `We'll confirm anything still open shortly. - HLC Issaquah`;
+      }
+    } else {
+      result = await orchestrateOne({
+        payload, page, teachers, roster, csvRows, csvAvailable, historyRows,
+        backtest: args.backtest, log: (m) => console.log(m),
+      });
+    }
   } finally {
     await browser.close();
   }

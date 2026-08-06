@@ -87,6 +87,7 @@ const ACTION_EMOJI = {
   BLOCKED:           ':warning:',
   SCHEDULE_INFO:     ':mag:',
   RESTORE:           ':leftwards_arrow_with_hook:',
+  RETEST_MOVE:       ':memo:',
 };
 
 /** Lowercased word tokens of a name, e.g. "Zahera Shaik (Shaheer (JB))" → [zahera, shaik, shaheer, jb]. */
@@ -168,6 +169,22 @@ function buildSlackText(rec, threadEntry) {
   }
   lines.push('');
 
+  // Multi-session bookings: one part per requested session, each with its own
+  // tutor decision. The primary part still renders below via the normal path;
+  // this block lists the whole set first so staff see the full family ask.
+  if (rec.multi && Array.isArray(rec.parts) && rec.parts.length > 1) {
+    lines.push(`*${rec.parts.length}-session ask* — one decision per session:`);
+    for (const q of rec.parts) {
+      const a = q.recommended || {};
+      const t = a.tutor ? String(a.tutor).replace(/^([^,]+),\s*([^(]+?)\s*(\(.*)?$/, '$2').trim() : null;
+      const what = a.action === 'OFFER_SLOTS'
+        ? `offer times${t ? ' w/ ' + t : ''}: ${(a.suggestedSlots || []).slice(0, 3).map(x => x.label).join(', ') || '—'}`
+        : a.action ? `${a.action}${t ? ' w/ ' + t : ''}` : (q.skipped ? `skipped (${q.skipped})` : 'no result');
+      lines.push(`• ${q.date}${q.time ? ' ' + q.time : ''}${q.student ? ` (${q.student})` : ''}${q.subject ? ` · ${q.subject}` : ''} — ${what}`);
+    }
+    lines.push('');
+  }
+
   // Recommendation — always a SINGLE proposed change, shaped by action.
   if (action === 'PROGRAM_OFFER') {
     const sch = rec.recommended.proposedSchedule || [];
@@ -198,6 +215,17 @@ function buildSlackText(rec, threadEntry) {
     lines.push(`*Reinstate* ${sess.length} existing session(s) on ${dateNice} — ` +
       `${sess.map(s => `${s.start || '?'}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join(', ')}.`);
     lines.push(`_These are already on the schedule as cancelled — un-cancel rather than booking new._`);
+  } else if (action === 'RETEST_MOVE') {
+    // A proctored test seat, not a tutor booking — never offer tutor slots here.
+    const r = rec.recommended;
+    if (r.alreadyBooked) {
+      lines.push(`*Practice test already booked* on ${dateNice} — confirm with the family, don't rebook.`);
+    } else if ((r.existingBlock || []).length) {
+      const b = r.existingBlock[0];
+      lines.push(`*Move the practice test* into the existing ${dateNice} block at ${b.start} (${b.count} student(s) seated)${r.sourceDate ? ` — remove the ${r.sourceDate} booking` : ''}.`);
+    } else {
+      lines.push(`*Move the practice test* to ${dateNice}${r.time ? ` at ${r.time}` : ''} — no block exists yet, staff to seat it${r.sourceDate ? `; remove the ${r.sourceDate} booking` : ''}.`);
+    }
   } else if (action === 'CANCEL') {
     const sess = rec.recommended.sessions || [];
     lines.push(sess.length
@@ -237,6 +265,9 @@ function buildSlackText(rec, threadEntry) {
   lines.push('');
   if (action === 'BLOCKED' || action === 'UNKNOWN') {
     lines.push('_⚠️ No auto-recommendation — staff to handle. ❌ decline to dismiss._');
+  } else if (action === 'RETEST_MOVE') {
+    // A staff action, but not a tutor one — "reply with a tutor" makes no sense here.
+    lines.push('_✅ accept (move the test) · ❌ decline — no tutor involved._');
   } else if (action === 'SCHEDULE_INFO') {
     // Nothing was proposed, so there is nothing to accept or edit. Offering
     // "reply with a tutor" on a read-only answer just invites a wrong click.

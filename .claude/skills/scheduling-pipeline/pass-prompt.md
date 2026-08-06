@@ -41,6 +41,15 @@ books, moves, or cancels anything.
 If the family asks for information AND a change in the same message, classify it as
 the change (`reschedule` / `cancel` / etc.), not as `lookup`.
 
+### Practice tests / retests
+
+A request about an SAT/ACT RETEST or practice test is a proctored TEST SEAT, not
+a tutoring session - say so in the subject ("SAT retest", "practice test") and
+set `fromDate` to the current test date when the family is moving one. The
+pipeline seats it in the target day's test block; it must never turn into a
+tutor-availability search (that mistake sent a family a tutor's teaching slots
+for a test move).
+
 ### `sessions` - when the ask covers more than one session
 
 Families routinely ask in FAMILY scope: "cancel Friday sessions on 08/07 and
