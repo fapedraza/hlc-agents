@@ -206,17 +206,28 @@ function resolveStudent(contactName, rosterRows, opts = {}) {
   }
   scored.sort((a, b) => b._score - a._score);
   const top = scored[0];
-  const confidence = !top ? 'none'
-    : top._score >= 0.90 ? 'high'
-    : top._score >= 0.55 ? 'medium'
-    : 'low';
+  // CONFIDENCE FLOOR. Below `medium` (0.55) a "match" is one or two weak token
+  // overlaps, and every one we have graded was wrong: "Matthew Mar Chong" ->
+  // Ben Mark at 0.167 (a three-way tie; the reply draft then asked the parent
+  // "Which works best for Ben?") and "Ishaan Boinepally" -> Ishaan Vij at 0.500
+  // (right first name, WRONG FAMILY). Measured against every verified-correct
+  // resolution: the lowest genuine score is 0.750 (the Gwen->Gwendolen nickname),
+  // so 0.55 sits in a clean gap. Below it, return NO match: the unresolved path
+  // already warns staff and hedges the draft, which beats a confidently named
+  // wrong child in a message to a parent.
+  const RESOLVE_FLOOR = 0.55;
+  const resolved = top && top._score >= RESOLVE_FLOOR ? top : null;
+  const confidence = !resolved ? 'none'
+    : resolved._score >= 0.90 ? 'high'
+    : 'medium';
   return {
     parsed,
-    candidates: scored.slice(0, 5),
-    bestMatch: top || null,
+    candidates: scored.slice(0, 5),   // kept even when floored, for logs/debug
+    bestMatch: resolved,
     confidence,
+    flooredMatch: !resolved && top ? { name: `${top.firstname} ${top.lastname}`, score: top._score } : null,
     isTeacherContact: false,
-    targetStudent: targetStudent || (top ? `${top.firstname || top.firstName || ''} ${top.lastname || top.lastName || ''}`.trim() : null),
+    targetStudent: targetStudent || (resolved ? `${resolved.firstname || resolved.firstName || ''} ${resolved.lastname || resolved.lastName || ''}`.trim() : null),
   };
 }
 

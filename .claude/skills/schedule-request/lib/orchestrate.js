@@ -447,16 +447,27 @@ function buildActionPlan(recommended, payload, tutorEvals, rosterRow) {
   }
   if (recommended.action === 'CANCEL') {
     // #1 Cancel: no tutor reasoning; enumerate the existing session(s) to remove.
+    // Sessions may span several students and dates (Duvvuru: both kids, both
+    // Fridays). The ops list and the family draft both carry the full scope —
+    // "I've canceled Nivin's and Kavin's sessions on 8/7 and 8/14" is what staff
+    // actually sent, and the old one-date draft made the bot look like it had
+    // only heard half the message.
     const sess = recommended.sessions || [];
-    const list = sess.map(s => `${fmt12(s.start)}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join('; ');
+    const list = sess.map(s =>
+      `${s.date || payload.proposedDate} ${fmt12(s.start)}${s.student ? ` (${s.student})` : ''}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join('; ');
+    const who = [...new Set(sess.map(x => x.student).filter(Boolean))];
+    const whoNice = who.length > 1
+      ? who.slice(0, -1).map(n => n + "'s").join(', ') + ' and ' + who[who.length - 1] + "'s sessions"
+      : `${who[0] || student}'s session${sess.length > 1 ? 's' : ''}`;
+    const daysNice = [...new Set(sess.map(x => familyDate(x.date || payload.proposedDate)))].join(' and ');
     return {
       lcos: sess.length
-        ? `Cancel ${sess.length} session(s) for ${student} on ${payload.proposedDate} (${list}) — set the cancel attendcode per policy.`
+        ? `Cancel ${sess.length} session(s) (${list}) — set the cancel attendcode per policy.`
         : `No session found to cancel on ${payload.proposedDate}; verify the date with the family.`,
-      aplus: sess.length ? `Cancel the A+ session(s) on ${payload.proposedDate}: ${list}.` : 'No A+ session found to cancel.',
+      aplus: sess.length ? `Cancel the A+ session(s): ${list}.` : 'No A+ session found to cancel.',
       payment: 'No charge for a cancellation — apply credit/makeup per policy.',
       textReplyDraft: sess.length
-        ? `Hi! I've canceled ${student}'s session on ${dateForFamily}. Let us know if you'd like to reschedule it. - HLC Issaquah`
+        ? `Hi! I've canceled ${whoNice} on ${daysNice}. Let us know if you'd like to reschedule. - HLC Issaquah`
         : `Hi! I don't see a session for ${student} on ${dateForFamily} — could you confirm the date? - HLC Issaquah`,
     };
   }
@@ -774,7 +785,11 @@ async function orchestrateOne({
   // precisely the one her note excludes (16 sessions were booked against a rule
   // dated 8/1/2026). Filtering here also avoids paying for A+ page loads on a
   // tutor we could never propose.
-  if (studentFullName && candidateNames.length) {
+  // (skipped for cancels: no tutor is being chosen, and "Leta is excluded"
+  //  on a cancellation reads as noise to staff. Local flag - `isCancel` is
+  //  declared further down, same hoisting trap as `isLookup`.)
+  const cancelAsk = !backtest && (payload.requestType || '').toLowerCase() === 'cancel';
+  if (!cancelAsk && studentFullName && candidateNames.length) {
     const kept = [];
     for (const n of candidateNames) {
       const hit = tutorRules.excludedBy(studentFullName, n, effSubj.subject);
@@ -891,14 +906,27 @@ async function orchestrateOne({
   const CANCELLED = new Set(['cancelled','canceled','no-show','no show','noshow','deleted','removed','void','anm','anm - paid','anm - unpaid','absent no makeup']);
   // The student's non-cancelled sessions on an ISO date, across ALL tutors —
   // used to cancel, and to find the "from" tutor of a reschedule.
-  function studentSessionsOn(isoDate) {
-    if (!isoDate || !bookingAvailable) return [];
+  function studentSessionsOn(isoDate, rosterRow = resolution.bestMatch) {
+    if (!isoDate || !bookingAvailable || !rosterRow) return [];
     const mdy = isoToMDY(isoDate);
     return bookingRows
-      .filter(r => isOwnStudent((r['Student Name'] || '').trim(), resolution.bestMatch)
+      .filter(r => isOwnStudent((r['Student Name'] || '').trim(), rosterRow)
         && (r['Session Date'] || '').trim() === mdy
         && !CANCELLED.has((r['Session Status'] || '').toLowerCase()))
       .map(r => ({ tutor: (r['Teacher'] || '').trim(), start: toHHMM24((r['Start Time'] || '').trim()), duration: (r['Duration'] || '').trim() }));
+  }
+  // Resolve a sibling named in a sessions[] entry, memoized. Falls back to the
+  // primary student when the entry names nobody or the name doesn't clear the
+  // resolution floor - never guesses a different child.
+  const siblingCache = new Map();
+  function rosterRowFor(studentName) {
+    if (!studentName) return resolution.bestMatch;
+    const key = studentName.toLowerCase();
+    if (!siblingCache.has(key)) {
+      const r = resolveStudent(payload.contactName, roster, { student: studentName });
+      siblingCache.set(key, r.bestMatch || null);
+    }
+    return siblingCache.get(key) || resolution.bestMatch;
   }
   /**
    * The student's CANCELLED sessions on a date — the pool a restore draws from.
@@ -1087,13 +1115,32 @@ async function orchestrateOne({
     };
   } else if (isCancel) {
     // #1 Cancel: no tutor reasoning — just identify the session(s) to cancel.
-    const sessions = studentSessionsOn(payload.proposedDate);
+    //
+    // A cancel is routinely a FAMILY-scope ask. Duvvuru, 2026-08-01: "cancel
+    // Friday sessions on 08/07 and 08/14 for both Nivin and Kavin" — four
+    // appointments. The classifier captured all four in its notes and the
+    // single proposedDate then threw three away; staff had to catch the rest
+    // from prose. `sessions[]` carries the full scope; the old single-date
+    // payload remains the one-entry case of the same path.
+    const wanted = (Array.isArray(payload.sessions) && payload.sessions.length)
+      ? payload.sessions
+      : [{ student: null, date: payload.proposedDate }];
+    const sessions = [];
+    for (const w of wanted) {
+      if (!w || !w.date) continue;
+      const row = rosterRowFor(w.student);
+      for (const s of studentSessionsOn(w.date, row)) {
+        sessions.push({ ...s, date: w.date, student: studentFirstName(row) });
+      }
+    }
+    const who = [...new Set(sessions.map(s => s.student))];
+    const days = [...new Set(sessions.map(s => s.date))];
     recommended = {
       action: 'CANCEL',
       sessions,
       reason: sessions.length
-        ? `Cancel ${sessions.length} existing session(s) for ${studentFirstName(resolution.bestMatch)} on ${payload.proposedDate} — no tutor selection needed.`
-        : `No existing (non-cancelled) session found for this student on ${payload.proposedDate}; confirm the date with staff.`,
+        ? `Cancel ${sessions.length} existing session(s) for ${who.join(' and ')} across ${days.length} day(s) (${days.join(', ')}) — no tutor selection needed.`
+        : `No existing (non-cancelled) session found for this ask (${wanted.map(w => w.date).join(', ')}); confirm the date(s) with staff.`,
     };
   } else if (restorable.length) {
     // #0b Restore: the family wants their USUAL slot back, not a new one. Only
@@ -1208,6 +1255,15 @@ async function orchestrateOne({
         }
       }
     }
+  }
+
+  // A multi-session ask that ISN'T a cancel still gets a single recommendation
+  // today (tutor selection per extra session is future work) — but the scope must
+  // never be silently dropped again: say plainly what else the family asked for.
+  if (!isCancel && Array.isArray(payload.sessions) && payload.sessions.length > 1) {
+    const extra = payload.sessions.slice(1)
+      .map(w => `${w.date}${w.time ? ' ' + w.time : ''}${w.student ? ' (' + w.student + ')' : ''}`).join('; ');
+    tutorNote.push(`This ask covers ${payload.sessions.length} sessions — recommending the first; staff also need: ${extra}.`);
   }
 
   const actionPlan = buildActionPlan(recommended, payload, tutorEvals, resolution.bestMatch);

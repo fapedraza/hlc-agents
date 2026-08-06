@@ -201,7 +201,7 @@ function buildSlackText(rec, threadEntry) {
   } else if (action === 'CANCEL') {
     const sess = rec.recommended.sessions || [];
     lines.push(sess.length
-      ? `*Cancel* ${sess.length} session(s): ${sess.map(s => `${s.start || '?'}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join(', ')} — no tutor selection needed.`
+      ? `*Cancel* ${sess.length} session(s): ${sess.map(s => `${s.date ? s.date + ' ' : ''}${s.start || '?'}${s.student ? ` (${s.student})` : ''}${s.tutor ? ` w/ ${s.tutor}` : ''}`).join(', ')} — no tutor selection needed.`
       : `*Cancel requested* but no existing session found on ${dateNice} — confirm the date with the family.`);
   } else if (action === 'OFFER_SLOTS') {
     const slots = (rec.recommended.suggestedSlots || []).map(s => s.label);

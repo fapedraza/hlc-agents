@@ -41,6 +41,25 @@ books, moves, or cancels anything.
 If the family asks for information AND a change in the same message, classify it as
 the change (`reschedule` / `cancel` / etc.), not as `lookup`.
 
+### `sessions` - when the ask covers more than one session
+
+Families routinely ask in FAMILY scope: "cancel Friday sessions on 08/07 and
+08/14 for both Nivin and Kavin" is four appointments, and a payload that carries
+one date acts on one and silently drops three. When the ask spans multiple dates
+or students, add a `sessions` array covering EVERY session, and keep the
+top-level `student`/`proposedDate`/`proposedTime` set to the FIRST entry:
+
+    "sessions": [
+      { "student": "Nivin Duvvuru", "date": "2026-08-07" },
+      { "student": "Kavin Duvvuru", "date": "2026-08-07" },
+      { "student": "Nivin Duvvuru", "date": "2026-08-14" },
+      { "student": "Kavin Duvvuru", "date": "2026-08-14" }
+    ]
+
+`time` is optional per entry. Omit `sessions` entirely for a single-session ask
+- most are. Cancellations act on the whole list; other request types recommend
+for the first and surface the rest to staff.
+
 ### `courtesy` - an optional warm closing line
 
 Families usually say WHY they are writing. Staff acknowledge it; the bot's drafts
