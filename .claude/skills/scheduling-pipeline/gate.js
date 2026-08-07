@@ -1,9 +1,9 @@
 /**
- * gate.js — is there anything for the scheduling pipeline to DO right now?
+ * gate.js - is there anything for the scheduling pipeline to DO right now?
  *
  * The full pass costs a 30-54s `claude -p` invocation, and ~85% of passes were
  * idle: ninety LLM calls a day to discover "0 new threads". Meanwhile the
- * 15-minute cadence was the bot's biggest latency — a customer message waited
+ * 15-minute cadence was the bot's biggest latency - a customer message waited
  * ~7.5 min on average just to be noticed, in a race staff often win in five.
  *
  * This gate is the cheap 2-minute heartbeat: one TR API fetch (~2s, no LLM, no
@@ -33,7 +33,7 @@ const latestInboundAt = c => ((c && c.thread) || [])
   .filter(Boolean).sort((a, b) => b - a)[0] || null;
 
 try {
-  // Forced full pass when the last one is stale — this also covers first run.
+  // Forced full pass when the last one is stale - this also covers first run.
   let markerAgeMin = Infinity;
   try { markerAgeMin = (Date.now() - fs.statSync(MARKER).mtimeMs) / 60000; } catch {}
   if (markerAgeMin >= FORCE_FULL_MIN) { console.log(`[gate] full pass due (last was ${markerAgeMin === Infinity ? 'never' : markerAgeMin.toFixed(0) + 'm ago'})`); process.exit(0); }
@@ -57,11 +57,11 @@ try {
     const seen = trTime(r.handledInboundISO) || new Date(r.lastUpdateISO);
     if (latest > seen) reasons.push(`new inbound: ${c.contactName || c.phone}`);
   }
-  if (reasons.length) { console.log('[gate] WORK — ' + reasons.join('; ')); process.exit(0); }
-  console.log('[gate] idle — skipping the pass (last full ' + markerAgeMin.toFixed(0) + 'm ago)');
+  if (reasons.length) { console.log('[gate] WORK - ' + reasons.join('; ')); process.exit(0); }
+  console.log('[gate] idle - skipping the pass (last full ' + markerAgeMin.toFixed(0) + 'm ago)');
   process.exit(3);
 } catch (e) {
   // Any gate failure must not silence the pipeline: fall through to a full pass.
-  console.log('[gate] error (' + e.message + ') — running the full pass to be safe');
+  console.log('[gate] error (' + e.message + ') - running the full pass to be safe');
   process.exit(0);
 }
