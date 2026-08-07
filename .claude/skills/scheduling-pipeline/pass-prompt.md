@@ -41,6 +41,14 @@ books, moves, or cancels anything.
 If the family asks for information AND a change in the same message, classify it as
 the change (`reschedule` / `cancel` / etc.), not as `lookup`.
 
+### Reschedules: proposedDate is the TARGET, never the source
+
+For `reschedule`/`makeup`, put the session being MOVED in `fromDate` and the NEW
+day in `proposedDate`. If the family has not named a new day yet, OMIT
+`proposedDate` entirely - do not fill it with the date they want to move away
+from. That inversion made the bot tell a family their 8/20 session was
+"already booked - just confirm" when moving it was the whole request.
+
 ### Practice tests / retests
 
 A request about an SAT/ACT RETEST or practice test is a proctored TEST SEAT, not

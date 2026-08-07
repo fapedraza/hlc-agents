@@ -1264,7 +1264,20 @@ async function orchestrateOne({
     const alreadyMatches = backtest ? [] : tutorEvals.filter(t => t.found && t.eval && t.eval.ownStudentMatches.length > 0);
     const alreadyBooked = alreadyMatches.find(t => preferredTutor && sameTutor(t.teacher.lastFirst, preferredTutor)) || alreadyMatches[0];
     const preferredUsable = isReschedule && preferredTutor && usable.find(t => sameTutor(t.teacher.lastFirst, preferredTutor));
-    if (alreadyBooked) {
+    if (alreadyBooked && isReschedule && !payload.fromDate) {
+      // The family asked to MOVE a session, and the booking sitting at exactly
+      // the proposed slot is that session — the SOURCE, not the target. Saying
+      // "already booked, just confirm" answers the opposite of what they asked:
+      // Kim Magill wanted the 8/20 1:00pm moved, the bot confirmed it, staff
+      // cancelled it. With no separate fromDate there is no target to book, so
+      // the honest answer is that staff need the family's new day/time.
+      const ex = alreadyBooked.eval.ownStudentMatches[0];
+      recommended = {
+        action: 'BLOCKED',
+        reason: `the family wants to MOVE the ${payload.proposedDate}${ex?.start ? ' ' + ex.start : ''} session` +
+          ` with ${shortTutorName(alreadyBooked.teacher.lastFirst)} but gave no new day/time — ask what works and rebook.`,
+      };
+    } else if (alreadyBooked) {
       recommended = {
         action: 'ALREADY_BOOKED', tutor: alreadyBooked.teacher.lastFirst,
         existing: alreadyBooked.eval.ownStudentMatches[0],

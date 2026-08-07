@@ -205,6 +205,12 @@ function cmdProcess(argv) {
     console.error(`hash ${payload.hash} not in pipeline-state — run \`pending\` first (or it was already processed).`);
     process.exit(1);
   }
+  // A reopened conversation is about to get a fresh post. Remember the old one so
+  // it can be collapsed after the new post lands — otherwise it lingers in the
+  // channel with a live-looking accept/decline footer for an ask that no longer
+  // stands. (Collapse happens AFTER the new post: if posting fails we keep the
+  // old message intact rather than erasing the only visible recommendation.)
+  const priorSlack = st.requests[payload.hash].slack || null;
   const { hash, ...classification } = payload;
   state.update(st, hash, { status: 'classified', classification });
   state.save(st);
@@ -230,6 +236,15 @@ function cmdProcess(argv) {
         status: 'recommended', recommendationFile: recFile, recommendedAction: action,
         slack: ts ? { channel: CHANNEL, ts, postedISO: state.nowISO() } : null,
       });
+      if (ts && priorSlack && priorSlack.ts && priorSlack.ts !== ts) {
+        try {
+          run(path.join(SR_DIR, 'post-slack.js'),
+            ['--collapse', priorSlack.ts, '--collapse-label', payload.contactName || 'this conversation', '--channel', priorSlack.channel || CHANNEL]);
+          process.stderr.write(`[process] collapsed superseded post ts=${priorSlack.ts}\n`);
+        } catch (e) {
+          process.stderr.write(`[process] collapse of old post failed (non-fatal): ${e.message}\n`);
+        }
+      }
     }
     state.save(st);
     process.stderr.write(`[process] ${payload.contactName}: ${action}${ts ? ` posted (ts=${ts})` : ''}. State: ${JSON.stringify(state.summary(st))}\n`);

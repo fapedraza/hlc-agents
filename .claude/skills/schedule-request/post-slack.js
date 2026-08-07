@@ -35,7 +35,7 @@ function readEnv(p) {
 }
 
 function parseArgs(argv) {
-  const a = { recommendation: null, messages: null, channel: null, dryRun: false, seedReactions: false };
+  const a = { recommendation: null, messages: null, channel: null, dryRun: false, seedReactions: false, collapse: null, collapseLabel: null };
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
     if (v === '--messages')          a.messages = argv[++i];
@@ -44,6 +44,8 @@ function parseArgs(argv) {
     else if (v.startsWith('--channel='))  a.channel  = v.slice('--channel='.length);
     else if (v === '--dry-run')      a.dryRun = true;
     else if (v === '--seed-reactions') a.seedReactions = true;
+    else if (v === '--collapse')       a.collapse = argv[++i];
+    else if (v === '--collapse-label') a.collapseLabel = argv[++i];
     else if (!a.recommendation)      a.recommendation = v;
   }
   return a;
@@ -309,11 +311,32 @@ function postToSlack({ token, channel, text }) {
 
 (async () => {
   const args = parseArgs(process.argv.slice(2));
+  const envEarly = readEnv(ENV_PATH);
+
+  // --collapse <ts>: shrink a SUPERSEDED recommendation post to one quiet line.
+  // A reopened conversation gets a fresh post; the old one otherwise lingers with
+  // a live-looking accept/decline footer — stale actionable items were the main
+  // channel clutter (25 recommendation posts across 3 days, several superseded).
+  if (args.collapse) {
+    const tok = envEarly.SLACK_BOT_TOKEN;
+    const ch = args.channel || envEarly.SCHEDULING_SLACK_CHANNEL || envEarly.RECONCILE_SLACK_CHANNEL;
+    const label = args.collapseLabel || 'this conversation';
+    const text = `~superseded~ :arrow_heading_down: *${label}* — the family wrote again; see the newer recommendation below.`;
+    const res = await fetch('https://slack.com/api/chat.update', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: ch, ts: args.collapse, text }),
+    });
+    const j = await res.json();
+    console.log(j.ok ? `collapsed superseded post ts=${args.collapse}` : `collapse failed: ${j.error}`);
+    process.exit(j.ok ? 0 : 1);
+  }
+
   if (!args.recommendation) {
-    console.error('Usage: node post-slack.js <recommendation.json> [--messages <messages.json>] [--channel <CHANNEL_ID>] [--dry-run]');
+    console.error('Usage: node post-slack.js <recommendation.json> [--messages <messages.json>] [--channel <CHANNEL_ID>] [--dry-run] [--collapse <ts> --collapse-label <name>]');
     process.exit(1);
   }
-  const env = readEnv(ENV_PATH);
+  const env = envEarly;
   const token = env.SLACK_BOT_TOKEN;
   const channel = args.channel || env.SCHEDULING_SLACK_CHANNEL || env.RECONCILE_SLACK_CHANNEL;
   const messagesPath = args.messages
