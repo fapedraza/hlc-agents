@@ -8,6 +8,13 @@ set PROMPT=C:\projects\hlc-agents\.claude\skills\scheduling-pipeline\pass-prompt
 set LOGFILE=%USERPROFILE%\.claude\logs\scheduling-pipeline-pass.log
 if not exist "%USERPROFILE%\.claude\logs" mkdir "%USERPROFILE%\.claude\logs"
 
+REM Cheap gate: one TR API call decides whether this 2-minute tick needs the
+REM full pass (roster + rules + claude classify + browser). Exit 3 = idle and a
+REM recent full pass exists, so skip everything. Any gate error runs the full
+REM pass - the gate must never be able to silence the pipeline.
+node .claude\skills\scheduling-pipeline\gate.js >> "%LOGFILE%" 2>&1
+if %ERRORLEVEL%==3 exit /b 0
+
 REM Refresh the LCOS active-student roster before the pass.
 REM SKILL.md says to refresh it via mcp__lcos__lcos_get_active_students, but
 REM .mcp.json is empty so that tool does not exist - the roster silently froze
@@ -40,4 +47,6 @@ REM --min-age-hours 24 lets the outcome settle; already-settled records are
 REM skipped before any API call, so this is cheap at a 15-minute cadence.
 node .claude\skills\scheduling-pipeline\backfill-outcomes.js --apply --min-age-hours 24 >> "%LOGFILE%" 2>&1
 
+REM Mark the completed full pass; the gate forces a new one when this is stale.
+type nul > "%USERPROFILE%\.claude\logs\last-full-pass.marker"
 echo ===== %date% %time% pass exit %ERRORLEVEL% ===== >> "%LOGFILE%"
